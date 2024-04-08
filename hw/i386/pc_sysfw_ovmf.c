@@ -34,7 +34,7 @@ static uint8_t *ovmf_table;
 static int ovmf_table_len;
 static OvmfSevMetadata *ovmf_sev_metadata_table;
 
-#define OVMF_SEV_META_DATA_GUID "dc886566-984a-4798-A75e-5585a7bf67cc"
+#define OVMF_SEV_META_DATA_GUID "dc886566-984a-4798-a75e-5585a7bf67cc"
 typedef struct __attribute__((__packed__)) OvmfSevMetadataOffset {
     uint32_t offset;
 } OvmfSevMetadataOffset;
@@ -43,9 +43,10 @@ static void pc_system_parse_sev_metadata(uint8_t *flash_ptr, size_t flash_size)
 {
     OvmfSevMetadata     *metadata;
     OvmfSevMetadataOffset  *data;
-
+    //error_report("entering pc_system_parse_sev-Metadata\n");
     if (!pc_system_ovmf_table_find(OVMF_SEV_META_DATA_GUID, (uint8_t **)&data,
                                    NULL)) {
+    //error_report("cannot find sev meta data");
         return;
     }
 
@@ -60,6 +61,7 @@ static void pc_system_parse_sev_metadata(uint8_t *flash_ptr, size_t flash_size)
 
 void pc_system_parse_ovmf_flash(uint8_t *flash_ptr, size_t flash_size)
 {
+    //error_report("entering pc_system_parse_ovmf_flash");
     uint8_t *ptr;
     QemuUUID guid;
     int tot_len;
@@ -124,17 +126,21 @@ void pc_system_parse_ovmf_flash(uint8_t *flash_ptr, size_t flash_size)
 bool pc_system_ovmf_table_find(const char *entry, uint8_t **data,
                                int *data_len)
 {
+    //error_report("pc_system_ovmf_table_find on %s\n", entry);
     uint8_t *ptr = ovmf_table;
     int tot_len = ovmf_table_len;
     QemuUUID entry_guid;
 
     assert(ovmf_flash_parsed);
+    //error_report("confirmed ovmf_flash_parsed!\n");
 
     if (qemu_uuid_parse(entry, &entry_guid) < 0) {
+        //error_report("qemu_uuid_parse failed!\n");
         return false;
     }
 
     if (!ptr) {
+        //error_report("ptr empty!\n");
         return false;
     }
 
@@ -166,15 +172,18 @@ bool pc_system_ovmf_table_find(const char *entry, uint8_t **data,
         ptr -= len;
         tot_len -= len;
         if (qemu_uuid_is_equal(guid, &entry_guid)) {
+            //error_report("Checking uuid equal ...\n");
             if (data) {
                 *data = ptr;
             }
             if (data_len) {
                 *data_len = len - sizeof(QemuUUID) - sizeof(uint16_t);
             }
+            //error_report("Equal! return true!\n");
             return true;
         }
     }
+    //error_report("Can't find. return false\n");
     return false;
 }
 

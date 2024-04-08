@@ -1254,6 +1254,15 @@ sev_snp_cpuid_info_fill(SnpCpuidInfo *snp_cpuid_info,
             snp_cpuid_entry->xcr0_in = 1;
             snp_cpuid_entry->xss_in = 0;
         }
+
+        if (kvm_cpuid_entry->function == 0x1 && kvm_cpuid_entry->index == 0x0) {
+            snp_cpuid_entry->ecx &= ~0x01000000; // 0xf7fa3203 -> 0xf6fa3203
+        } else if (kvm_cpuid_entry->function == 0x7 && kvm_cpuid_entry->index == 0x0) {
+            snp_cpuid_entry->ebx &= ~0x0000002; // 0x219c07ab -> 0x219c07a9
+            snp_cpuid_entry->edx = 0;
+        } else if (kvm_cpuid_entry->function == 0x8000001d && kvm_cpuid_entry->index == 0x3) {
+            snp_cpuid_entry->edx &= ~0x00000004; // 0x00000006 -> 0x00000002
+        }
     }
 
     snp_cpuid_info->count = i;
@@ -1391,6 +1400,7 @@ sev_snp_launch_finish(SevSnpGuestState *sev_snp)
     Error *local_err = NULL;
     OvmfSevMetadata *metadata;
     struct kvm_sev_snp_launch_finish *finish = &sev_snp->kvm_finish_conf;
+    error_report("entering sev_snp_launch_finish\n");
 
     /*
      * To boot the SNP guest, the hypervisor is required to populate the CPUID
@@ -1398,6 +1408,8 @@ sev_snp_launch_finish(SevSnpGuestState *sev_snp)
      * the secrets and CPUID page is available through the OVMF metadata GUID.
      */
     metadata = pc_system_get_ovmf_sev_metadata_ptr();
+    //metadata = malloc(0x1000);
+    //memset(metadata, 0, 0x1000);
     if (metadata == NULL) {
         error_report("%s: Failed to locate SEV metadata header\n", __func__);
         exit(1);

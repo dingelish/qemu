@@ -894,8 +894,10 @@ void pc_memory_init(PCMachineState *pcms,
                                     &machine->device_memory->mr);
     }
 
+    error_report("before pc_system_firmware_init");
     /* Initialize PC system firmware */
     pc_system_firmware_init(pcms, rom_memory);
+    error_report("after pc_system_firmware_init");
 
     option_rom_mr = g_malloc(sizeof(*option_rom_mr));
     memory_region_init_ram(option_rom_mr, NULL, "pc.rom", PC_ROM_SIZE,

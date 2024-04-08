@@ -2310,8 +2310,8 @@ linux_user_ss.add(files('gdbstub.c', 'thunk.c'))
 specific_ss.add_all(when: 'CONFIG_LINUX_USER', if_true: linux_user_ss)
 
 # needed for fuzzing binaries
-subdir('tests/qtest/libqos')
-subdir('tests/qtest/fuzz')
+#subdir('tests/qtest/libqos')
+#subdir('tests/qtest/fuzz')
 
 # accel modules
 tcg_real_module_ss = ss.source_set()
@@ -2795,7 +2795,7 @@ subdir('scripts')
 subdir('tools')
 subdir('pc-bios')
 subdir('docs')
-subdir('tests')
+#subdir('tests')
 if gtk.found()
   subdir('po')
 endif

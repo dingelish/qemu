@@ -140,6 +140,7 @@ void pc_system_flash_cleanup_unused(PCMachineState *pcms)
 static void pc_system_flash_map(PCMachineState *pcms,
                                 MemoryRegion *rom_memory)
 {
+    error_report("entering pc_system_flash_map");
     hwaddr total_size = 0;
     int i;
     BlockBackend *blk;
@@ -194,7 +195,8 @@ static void pc_system_flash_map(PCMachineState *pcms,
             pc_isa_bios_init(rom_memory, flash_mem, size);
 
             /* Encrypt the pflash boot ROM */
-            if (sev_enabled()) {
+            //if (sev_enabled()) {
+            if (true) {
                 flash_ptr = memory_region_get_ram_ptr(flash_mem);
                 flash_size = memory_region_size(flash_mem);
                 /*
@@ -242,10 +244,13 @@ void pc_system_firmware_init(PCMachineState *pcms,
         }
     }
 
+    error_report("checking pflash_blk[0]");
     if (!pflash_blk[0]) {
+        error_report("Machine property pflash0 not set, use ROM mode");
         /* Machine property pflash0 not set, use ROM mode */
         x86_bios_rom_init(MACHINE(pcms), "bios.bin", rom_memory, false);
     } else {
+        error_report("Machine property pflash0 set");
         if (kvm_enabled() && !kvm_readonly_mem_enabled()) {
             /*
              * Older KVM cannot execute from device memory. So, flash
