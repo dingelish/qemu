@@ -12,6 +12,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/qemu-print.h"
 
 #include <linux/kvm.h>
 #include <linux/psp-sev.h>
@@ -1400,7 +1401,7 @@ sev_snp_launch_finish(SevSnpGuestState *sev_snp)
     Error *local_err = NULL;
     OvmfSevMetadata *metadata;
     struct kvm_sev_snp_launch_finish *finish = &sev_snp->kvm_finish_conf;
-    error_report("entering sev_snp_launch_finish\n");
+    qemu_printf("entering sev_snp_launch_finish\n");
 
     /*
      * To boot the SNP guest, the hypervisor is required to populate the CPUID
@@ -1408,12 +1409,12 @@ sev_snp_launch_finish(SevSnpGuestState *sev_snp)
      * the secrets and CPUID page is available through the OVMF metadata GUID.
      */
     metadata = pc_system_get_ovmf_sev_metadata_ptr();
-    //metadata = malloc(0x1000);
-    //memset(metadata, 0, 0x1000);
-    if (metadata == NULL) {
-        error_report("%s: Failed to locate SEV metadata header\n", __func__);
-        exit(1);
-    }
+    metadata = malloc(0x1000);
+    memset(metadata, 0, 0x1000);
+    //if (metadata == NULL) {
+    //    error_report("%s: Failed to locate SEV metadata header\n", __func__);
+    //    exit(1);
+    //}
 
     /* Populate all the metadata pages */
     snp_populate_metadata_pages(sev_snp, metadata);
@@ -1439,6 +1440,7 @@ sev_snp_launch_finish(SevSnpGuestState *sev_snp)
         error_free(sev_mig_blocker);
         exit(1);
     }
+    qemu_printf("leaving sev_snp_launch_finish\n");
 }
 
 
@@ -1451,11 +1453,13 @@ sev_vm_state_change(void *opaque, bool running, RunState state)
         if (!sev_check_state(sev_common, SEV_STATE_RUNNING)) {
             if (sev_snp_enabled()) {
                 sev_snp_launch_finish(SEV_SNP_GUEST(sev_common));
+                qemu_printf("returned to sev_vm_state_change\n");
             } else {
                 sev_launch_finish(SEV_GUEST(sev_common));
             }
         }
     }
+    qemu_printf("leaving sev_vm_state_change\n");
 }
 
 int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
@@ -1583,6 +1587,7 @@ int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
     qemu_add_vm_change_state_handler(sev_vm_state_change, sev_common);
 
     cgs->ready = true;
+    qemu_printf("sev_kvm_init completed! cgs->ready = true\n");
 
     return 0;
 err:
@@ -1699,6 +1704,7 @@ static int
 sev_es_find_reset_vector(void *flash_ptr, uint64_t flash_size,
                          uint32_t *addr)
 {
+    qemu_printf("entering sev_es_find_reset_vector");
     QemuUUID info_guid, *guid;
     SevInfoBlock *info;
     uint8_t *data;
@@ -1824,6 +1830,7 @@ static const QemuUUID sev_cmdline_entry_guid = {
  */
 bool sev_add_kernel_loader_hashes(SevKernelLoaderContext *ctx, Error **errp)
 {
+    qemu_printf("entering sev_add_kernel_loader_hashes\n");
     uint8_t *data;
     SevHashTableDescriptor *area;
     SevHashTable *ht;
@@ -1833,6 +1840,10 @@ bool sev_add_kernel_loader_hashes(SevKernelLoaderContext *ctx, Error **errp)
     uint8_t *hashp;
     size_t hash_len = HASH_SIZE;
     int aligned_len;
+
+    //if (!sev_guest->kernel_hashes) {
+        return false;
+    //}
 
     if (!pc_system_ovmf_table_find(SEV_HASH_TABLE_RV_GUID, &data, NULL)) {
         error_setg(errp, "SEV: kernel specified but OVMF has no hash table guid");

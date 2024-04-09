@@ -24,6 +24,8 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/qemu-print.h"
+#include "qemu/osdep.h"
 #include "hw/i386/pc.h"
 #include "cpu.h"
 
@@ -43,7 +45,7 @@ static void pc_system_parse_sev_metadata(uint8_t *flash_ptr, size_t flash_size)
 {
     OvmfSevMetadata     *metadata;
     OvmfSevMetadataOffset  *data;
-    //error_report("entering pc_system_parse_sev-Metadata\n");
+    qemu_printf("entering pc_system_parse_sev-Metadata\n");
     if (!pc_system_ovmf_table_find(OVMF_SEV_META_DATA_GUID, (uint8_t **)&data,
                                    NULL)) {
     //error_report("cannot find sev meta data");
@@ -61,7 +63,7 @@ static void pc_system_parse_sev_metadata(uint8_t *flash_ptr, size_t flash_size)
 
 void pc_system_parse_ovmf_flash(uint8_t *flash_ptr, size_t flash_size)
 {
-    //error_report("entering pc_system_parse_ovmf_flash");
+    error_report("entering pc_system_parse_ovmf_flash");
     uint8_t *ptr;
     QemuUUID guid;
     int tot_len;
@@ -126,7 +128,7 @@ void pc_system_parse_ovmf_flash(uint8_t *flash_ptr, size_t flash_size)
 bool pc_system_ovmf_table_find(const char *entry, uint8_t **data,
                                int *data_len)
 {
-    //error_report("pc_system_ovmf_table_find on %s\n", entry);
+    qemu_printf("pc_system_ovmf_table_find on %s\n", entry);
     uint8_t *ptr = ovmf_table;
     int tot_len = ovmf_table_len;
     QemuUUID entry_guid;

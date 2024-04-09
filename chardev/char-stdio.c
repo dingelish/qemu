@@ -23,6 +23,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/qemu-print.h"
 #include "qemu/module.h"
 #include "qemu/option.h"
 #include "qemu/sockets.h"
@@ -47,6 +48,7 @@ static bool stdio_echo_state;
 
 static void term_exit(void)
 {
+    qemu_printf("tcsetattr in term_exit\n");
     if (stdio_in_use) {
         tcsetattr(0, TCSANOW, &oldtty);
         fcntl(0, F_SETFL, old_fd0_flags);
@@ -73,6 +75,7 @@ static void qemu_chr_set_echo_stdio(Chardev *chr, bool echo)
         tty.c_lflag &= ~ISIG;
     }
 
+    qemu_printf("tcsetattr in qemu_chr_set_echo_stdio\n");
     tcsetattr(0, TCSANOW, &tty);
 }
 

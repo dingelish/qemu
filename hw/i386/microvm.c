@@ -17,6 +17,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu/error-report.h"
+#include "qemu/qemu-print.h"
 #include "qemu/cutils.h"
 #include "qemu/units.h"
 #include "qapi/error.h"
@@ -274,10 +275,13 @@ static void microvm_devices_init(MicrovmMachineState *mms)
         serial_hds_isa_init(isa_bus, 0, 1);
     }
 
+
+    qemu_printf("before x86_bios_rom_init");
     default_firmware = x86_machine_is_acpi_enabled(x86ms)
             ? MICROVM_BIOS_FILENAME
             : MICROVM_QBOOT_FILENAME;
     x86_bios_rom_init(MACHINE(mms), default_firmware, get_system_memory(), true);
+    qemu_printf("after microvm x86_bios_rom_init");
 }
 
 static void microvm_memory_init(MicrovmMachineState *mms)
@@ -331,6 +335,7 @@ static void microvm_memory_init(MicrovmMachineState *mms)
     rom_set_fw(fw_cfg);
 
     if (machine->kernel_filename != NULL) {
+        qemu_printf("microvm.c: loading kernel ...\n");
         x86_load_linux(x86ms, fw_cfg, 0, true, true);
     }
 
@@ -456,13 +461,17 @@ static HotplugHandler *microvm_get_hotplug_handler(MachineState *machine,
 
 static void microvm_machine_state_init(MachineState *machine)
 {
+    qemu_printf("microvm_machine_state_init start\n");
     MicrovmMachineState *mms = MICROVM_MACHINE(machine);
     X86MachineState *x86ms = X86_MACHINE(machine);
 
+    qemu_printf("microvm_machine_state_init start: microvm_memory_init\n");
     microvm_memory_init(mms);
 
+    qemu_printf("microvm_machine_state_init start: x86_cpus_init\n");
     x86_cpus_init(x86ms, CPU_VERSION_LATEST);
 
+    qemu_printf("microvm_machine_state_init start: device_init\n");
     microvm_devices_init(mms);
 }
 

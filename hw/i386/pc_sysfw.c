@@ -24,6 +24,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/qemu-print.h"
 #include "qemu-common.h"
 #include "qapi/error.h"
 #include "sysemu/block-backend.h"
@@ -140,7 +141,7 @@ void pc_system_flash_cleanup_unused(PCMachineState *pcms)
 static void pc_system_flash_map(PCMachineState *pcms,
                                 MemoryRegion *rom_memory)
 {
-    error_report("entering pc_system_flash_map");
+    qemu_printf("entering pc_system_flash_map\n");
     hwaddr total_size = 0;
     int i;
     BlockBackend *blk;
@@ -195,8 +196,8 @@ static void pc_system_flash_map(PCMachineState *pcms,
             pc_isa_bios_init(rom_memory, flash_mem, size);
 
             /* Encrypt the pflash boot ROM */
-            //if (sev_enabled()) {
-            if (true) {
+            //if (true) {
+            if (sev_enabled()) {
                 flash_ptr = memory_region_get_ram_ptr(flash_mem);
                 flash_size = memory_region_size(flash_mem);
                 /*
@@ -220,6 +221,7 @@ static void pc_system_flash_map(PCMachineState *pcms,
 void pc_system_firmware_init(PCMachineState *pcms,
                              MemoryRegion *rom_memory)
 {
+    qemu_printf("entering pc_system_firmware_init\n");
     PCMachineClass *pcmc = PC_MACHINE_GET_CLASS(pcms);
     int i;
     BlockBackend *pflash_blk[ARRAY_SIZE(pcms->flash)];

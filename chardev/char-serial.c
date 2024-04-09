@@ -23,6 +23,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/qemu-print.h"
 #include "qemu/module.h"
 #include "qemu/option.h"
 #include "qemu/sockets.h"
@@ -58,6 +59,7 @@ static void qmp_chardev_open_serial(Chardev *chr,
 static void tty_serial_init(int fd, int speed,
                             int parity, int data_bits, int stop_bits)
 {
+    qemu_printf("entering tty_serial_init\n");
     struct termios tty = {0};
     speed_t spd;
 
@@ -173,6 +175,7 @@ static void tty_serial_init(int fd, int speed,
         tty.c_cflag |= CSTOPB;
     }
 
+    qemu_printf("char-serial tcsetattr\n");
     tcsetattr(fd, TCSANOW, &tty);
 }
 

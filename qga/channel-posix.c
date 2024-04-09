@@ -1,4 +1,5 @@
 #include "qemu/osdep.h"
+#include "qemu/qemu-print.h"
 #include <termios.h>
 #include "qapi/error.h"
 #include "qemu/sockets.h"
@@ -121,6 +122,7 @@ static int ga_channel_client_add(GAChannel *c, int fd)
 static gboolean ga_channel_open(GAChannel *c, const gchar *path,
                                 GAChannelMethod method, int fd)
 {
+    qemu_printf("entering ga_channel_open\n");
     int ret;
     c->method = method;
 

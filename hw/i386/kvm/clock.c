@@ -154,11 +154,11 @@ static void kvm_update_clock(KVMClockState *s)
 
 static void do_kvmclock_ctrl(CPUState *cpu, run_on_cpu_data data)
 {
-    int ret = kvm_vcpu_ioctl(cpu, KVM_KVMCLOCK_CTRL, 0);
+    //int ret = kvm_vcpu_ioctl(cpu, KVM_KVMCLOCK_CTRL, 0);
 
-    if (ret && ret != -EINVAL) {
-        fprintf(stderr, "%s: %s\n", __func__, strerror(-ret));
-    }
+    //if (ret && ret != -EINVAL) {
+    //    fprintf(stderr, "%s: %s\n", __func__, strerror(-ret));
+    //}
 }
 
 static void kvmclock_vm_state_change(void *opaque, bool running,

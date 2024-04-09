@@ -23,6 +23,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/qemu-print.h"
 #include "qemu/units.h"
 #include "hw/i386/x86.h"
 #include "hw/i386/pc.h"
@@ -797,6 +798,7 @@ void pc_memory_init(PCMachineState *pcms,
                     MemoryRegion *rom_memory,
                     MemoryRegion **ram_memory)
 {
+    qemu_printf("entering pc_memory_init\n");
     int linux_boot, i;
     MemoryRegion *option_rom_mr;
     MemoryRegion *ram_below_4g, *ram_above_4g;
@@ -894,10 +896,10 @@ void pc_memory_init(PCMachineState *pcms,
                                     &machine->device_memory->mr);
     }
 
-    error_report("before pc_system_firmware_init");
+    qemu_printf("before pc_system_firmware_init\n");
     /* Initialize PC system firmware */
     pc_system_firmware_init(pcms, rom_memory);
-    error_report("after pc_system_firmware_init");
+    qemu_printf("after pc_system_firmware_init\n");
 
     option_rom_mr = g_malloc(sizeof(*option_rom_mr));
     memory_region_init_ram(option_rom_mr, NULL, "pc.rom", PC_ROM_SIZE,

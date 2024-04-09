@@ -13,6 +13,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/qemu-print.h"
 #include "qapi/qapi-events-run-state.h"
 #include "qapi/error.h"
 #include <sys/ioctl.h>
@@ -2308,11 +2309,13 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
      * their own initialization either here or elsewhere.
      */
     ret = sev_kvm_init(ms->cgs, &local_err);
+    qemu_printf("returned to kvm_arch_init\n");
     if (ret < 0) {
         error_report_err(local_err);
         return ret;
     }
 
+    qemu_printf("checking extension KVM_CAP_IRQ_ROUTING\n");
     if (!kvm_check_extension(s, KVM_CAP_IRQ_ROUTING)) {
         error_report("kvm: KVM_CAP_IRQ_ROUTING not supported by KVM");
         return -ENOTSUP;
@@ -2365,12 +2368,14 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
         }
     }
 
+    qemu_printf("kvm_vm_ioctl set tss\n");
     /* Set TSS base one page after EPT identity map. */
     ret = kvm_vm_ioctl(s, KVM_SET_TSS_ADDR, identity_base + 0x1000);
     if (ret < 0) {
         return ret;
     }
 
+    qemu_printf("e820 add entry\n");
     /* Tell fw_cfg to notify the BIOS to reserve the range. */
     ret = e820_add_entry(identity_base, 0x4000, E820_RESERVED);
     if (ret < 0) {
@@ -2439,6 +2444,7 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
         }
     }
 
+    qemu_printf("leaving arch_init\n");
     return 0;
 }
 
