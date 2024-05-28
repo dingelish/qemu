@@ -12,6 +12,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/qemu-print.h"
 #include "qemu/atomic.h"
 #include "qemu/iov.h"
 #include "qemu/log.h"
@@ -47,6 +48,9 @@
 #include "net_rx_pkt.h"
 #include "hw/virtio/vhost.h"
 #include "sysemu/qtest.h"
+
+#include <execinfo.h>
+#include <stdio.h>
 
 #define VIRTIO_NET_VM_VERSION    11
 
@@ -792,11 +796,14 @@ static uint64_t virtio_net_get_features(VirtIODevice *vdev, uint64_t features,
 {
     VirtIONet *n = VIRTIO_NET(vdev);
     NetClientState *nc = qemu_get_queue(n->nic);
+    qemu_printf("virtio_net_get_features: entering\n");
 
     /* Firstly sync all virtio-net possible supported features */
     features |= n->host_features;
+    qemu_printf("virtio_net_get_features: now features = %lX\n", features);
 
     virtio_add_feature(&features, VIRTIO_NET_F_MAC);
+    qemu_printf("virtio_net_get_features: after virtio_add_feature VIRTIO_NET_F_MAC features = %lX\n", features);
 
     if (!peer_has_vnet_hdr(n)) {
         virtio_clear_feature(&features, VIRTIO_NET_F_CSUM);
@@ -815,26 +822,32 @@ static uint64_t virtio_net_get_features(VirtIODevice *vdev, uint64_t features,
 
         virtio_clear_feature(&features, VIRTIO_NET_F_HASH_REPORT);
     }
+    qemu_printf("virtio_net_get_features: after peer_has_vnet_hdr features = %lX\n", features);
 
     if (!peer_has_vnet_hdr(n) || !peer_has_ufo(n)) {
         virtio_clear_feature(&features, VIRTIO_NET_F_GUEST_UFO);
         virtio_clear_feature(&features, VIRTIO_NET_F_HOST_UFO);
     }
+    qemu_printf("virtio_net_get_features: after peer_has_vnet_hdr || peer_has_ufo features = %lX\n", features);
 
     if (!peer_has_uso(n)) {
         virtio_clear_feature(&features, VIRTIO_NET_F_HOST_USO);
         virtio_clear_feature(&features, VIRTIO_NET_F_GUEST_USO4);
         virtio_clear_feature(&features, VIRTIO_NET_F_GUEST_USO6);
     }
+    qemu_printf("virtio_net_get_features: after peer_has_ufo features = %lX\n", features);
 
     if (!get_vhost_net(nc->peer)) {
+        qemu_printf("virtio_net_get_features: get_vhost_net failed, return features = %lX\n", features);
         return features;
     }
 
     if (!ebpf_rss_is_loaded(&n->ebpf_rss)) {
         virtio_clear_feature(&features, VIRTIO_NET_F_RSS);
+        qemu_printf("virtio_net_get_features: ebpf_rss_is_loaded failed, now features = %lX\n", features);
     }
     features = vhost_net_get_features(get_vhost_net(nc->peer), features);
+    qemu_printf("virtio_net_get_features: after vhost_net_get_features, now features = %lX\n", features);
     vdev->backend_features = features;
 
     if (n->mtu_bypass_backend &&
@@ -855,8 +868,10 @@ static uint64_t virtio_net_get_features(VirtIODevice *vdev, uint64_t features,
      */
     if (!virtio_has_feature(vdev->backend_features, VIRTIO_NET_F_CTRL_VQ)) {
         virtio_clear_feature(&features, VIRTIO_NET_F_GUEST_ANNOUNCE);
+        qemu_printf("virtio_net_get_features: after VIRTIO_NET_F_CTRL_VQ, now features = %lX\n", features);
     }
 
+    qemu_printf("virtio_net_get_features: return features = %lX\n", features);
     return features;
 }
 
@@ -989,8 +1004,11 @@ static void virtio_net_set_features(VirtIODevice *vdev, uint64_t features)
     Error *err = NULL;
     int i;
 
+    qemu_printf("virtio_net_set_features: entering with features = %lX\n", features);
+
     if (n->mtu_bypass_backend &&
             !virtio_has_feature(vdev->backend_features, VIRTIO_NET_F_MTU)) {
+        qemu_printf("virtio_net_set_features: VIRTIO_NET_F_MTU\n");
         features &= ~(1ULL << VIRTIO_NET_F_MTU);
     }
 

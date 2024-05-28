@@ -1073,6 +1073,16 @@ sev_snp_cpuid_info_fill(SnpCpuidInfo *snp_cpuid_info,
             snp_cpuid_entry->xcr0_in = 1;
             snp_cpuid_entry->xss_in = 0;
         }
+        if (kvm_cpuid_entry->function == 0x1 && kvm_cpuid_entry->index == 0x0) {
+            snp_cpuid_entry->ecx &= ~0x01000000; // 0xf7fa3203 -> 0xf6fa3203
+        } else if (kvm_cpuid_entry->function == 0x7 && kvm_cpuid_entry->index == 0x0) {
+            snp_cpuid_entry->ebx &= ~0x00000002; // 0x219c07ab -> 0x219c07a9
+            snp_cpuid_entry->edx = 0;
+        } else if (kvm_cpuid_entry->function == 0x80000008 && kvm_cpuid_entry->index == 0x0) {
+            snp_cpuid_entry->ebx &= ~0x02000000; // 0x1302d205 -> 0x1102d205
+        } else if (kvm_cpuid_entry->function == 0x8000001d && kvm_cpuid_entry->index == 0x3) {
+            snp_cpuid_entry->edx &= ~0x00000004; // 0x00000006 -> 0x00000002
+        }
     }
 
     snp_cpuid_info->count = i;

@@ -23,6 +23,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/qemu-print.h"
 #include "qemu/error-report.h"
 #include "qemu/module.h"
 #include "qapi/error.h"
@@ -63,8 +64,10 @@ void virtio_bus_device_plugged(VirtIODevice *vdev, Error **errp)
 
     /* Get the features of the plugged device. */
     assert(vdc->get_features != NULL);
+    qemu_printf("virtio_bus_device_plugged: calling vdc->get_features\n");
     vdev->host_features = vdc->get_features(vdev, vdev->host_features,
                                             &local_err);
+    qemu_printf("virtio_bus_device_plugged: vdc->get_features done, vdev->host_features = %lx\n", vdev->host_features);
     if (local_err) {
         error_propagate(errp, local_err);
         return;
@@ -78,8 +81,10 @@ void virtio_bus_device_plugged(VirtIODevice *vdev, Error **errp)
         return;
     }
 
+    qemu_printf("virtio_bus_device_plugged: checking has_iommu\n");
     vdev->dma_as = &address_space_memory;
     if (has_iommu) {
+        qemu_printf("virtio_bus_device_plugged: has_iommu is true\n");
         vdev_has_iommu = virtio_host_has_feature(vdev, VIRTIO_F_IOMMU_PLATFORM);
         /*
          * Present IOMMU_PLATFORM to the driver iff iommu_plattform=on and
@@ -87,6 +92,7 @@ void virtio_bus_device_plugged(VirtIODevice *vdev, Error **errp)
          * we fail the device.
          */
         virtio_add_feature(&vdev->host_features, VIRTIO_F_IOMMU_PLATFORM);
+        qemu_printf("virtio_bus_device_plugged: host_features VIRTIO_F_IOMMU_PLATFORM set\n");
         if (klass->get_dma_as) {
             vdev->dma_as = klass->get_dma_as(qbus->parent);
             if (!vdev_has_iommu && vdev->dma_as != &address_space_memory) {
@@ -95,6 +101,8 @@ void virtio_bus_device_plugged(VirtIODevice *vdev, Error **errp)
                 return;
             }
         }
+    } else {
+        qemu_printf("virtio_bus_device_plugged: has_iommu is not true\n");
     }
 }
 

@@ -18,6 +18,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/qemu-print.h"
 #include "exec/page-vary.h"
 #include "qapi/error.h"
 
@@ -2908,6 +2909,16 @@ MemTxResult address_space_read_full(AddressSpace *as, hwaddr addr,
     MemTxResult result = MEMTX_OK;
     FlatView *fv;
 
+    hwaddr detect_bit = (hwaddr)1 << 50; // virtio-net-pci req comes with this
+    if (addr & detect_bit) {
+        qemu_printf("address_space_read: %lx, len: %lu, as: %p\n", addr, len, as);
+        hwaddr patch_bit = (hwaddr)1 << 51; // but cbit is missing
+        if (!(addr & patch_bit)) {
+            addr |= patch_bit;
+            qemu_printf("detected missing c-bit in read. adding it back: %lx\n", addr);
+        }
+    }
+
     if (len > 0) {
         RCU_READ_LOCK_GUARD();
         fv = address_space_to_flatview(as);
@@ -2921,6 +2932,16 @@ MemTxResult address_space_write(AddressSpace *as, hwaddr addr,
                                 MemTxAttrs attrs,
                                 const void *buf, hwaddr len)
 {
+    hwaddr detect_bit = (hwaddr)1 << 50; // virtio-net-pci req comes with this
+    if (addr & detect_bit) {
+        qemu_printf("address_space_write: %lx, len: %lu, as: %p\n", addr, len, as);
+        hwaddr patch_bit = (hwaddr)1 << 51; // but cbit is missing
+        if (!(addr & patch_bit)) {
+            addr |= patch_bit;
+            qemu_printf("detected missing c-bit in write. adding it back: %lx\n", addr);
+        }
+    }
+
     MemTxResult result = MEMTX_OK;
     FlatView *fv;
 
@@ -2936,6 +2957,7 @@ MemTxResult address_space_write(AddressSpace *as, hwaddr addr,
 MemTxResult address_space_rw(AddressSpace *as, hwaddr addr, MemTxAttrs attrs,
                              void *buf, hwaddr len, bool is_write)
 {
+    //qemu_printf("address_space_rw: addr: %lx, is_write: %d\n", addr, is_write);
     if (is_write) {
         return address_space_write(as, addr, attrs, buf, len);
     } else {

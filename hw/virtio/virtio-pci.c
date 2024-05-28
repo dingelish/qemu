@@ -16,6 +16,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/qemu-print.h"
 
 #include "exec/memop.h"
 #include "standard-headers/linux/virtio_pci.h"
@@ -387,6 +388,8 @@ static void virtio_ioport_write(void *opaque, uint32_t addr, uint32_t val)
     uint16_t vector;
     hwaddr pa;
 
+    qemu_printf("qemu virtio_ioport_write: addr=%x, val=%x\n", addr, val);
+
     switch (addr) {
     case VIRTIO_PCI_GUEST_FEATURES:
         /* Guest does not negotiate properly?  We have to assume nothing. */
@@ -475,12 +478,16 @@ static uint32_t virtio_ioport_read(VirtIOPCIProxy *proxy, uint32_t addr)
     VirtIODevice *vdev = virtio_bus_get_device(&proxy->bus);
     uint32_t ret = 0xFFFFFFFF;
 
+    qemu_printf("qemu virtio_ioport_read: addr=%x\n", addr);
+
     switch (addr) {
     case VIRTIO_PCI_HOST_FEATURES:
         ret = vdev->host_features;
+        qemu_printf("qemu virtio_ioport_read: addr=%x VIRTIO_PCI_HOST_FEATURES=%x\n", addr, ret);
         break;
     case VIRTIO_PCI_GUEST_FEATURES:
         ret = vdev->guest_features;
+        qemu_printf("qemu virtio_ioport_read: addr=%x VIRTIO_PCI_GUEST_FEATURES=%x\n", addr, ret);
         break;
     case VIRTIO_PCI_QUEUE_PFN:
         ret = virtio_queue_get_addr(vdev, vdev->queue_sel)
@@ -521,6 +528,8 @@ static uint64_t virtio_pci_config_read(void *opaque, hwaddr addr,
     uint32_t config = VIRTIO_PCI_CONFIG_SIZE(&proxy->pci_dev);
     uint64_t val = 0;
 
+    qemu_printf("qemu virtio_pci_config_read: addr=%lx size=%x\n", addr, size);
+
     if (vdev == NULL) {
         return UINT64_MAX;
     }
@@ -556,6 +565,8 @@ static void virtio_pci_config_write(void *opaque, hwaddr addr,
     VirtIOPCIProxy *proxy = opaque;
     uint32_t config = VIRTIO_PCI_CONFIG_SIZE(&proxy->pci_dev);
     VirtIODevice *vdev = virtio_bus_get_device(&proxy->bus);
+
+    qemu_printf("qemu virtio_pci_config_write: addr=%lx val=%lx\n", addr, val);
 
     if (vdev == NULL) {
         return;
@@ -1599,6 +1610,8 @@ static uint64_t virtio_pci_common_read(void *opaque, hwaddr addr,
     uint32_t val = 0;
     int i;
 
+    qemu_printf("qemu virtio_pci_common_read: addr=%lx size=%x\n", addr, size);
+
     if (vdev == NULL) {
         return UINT64_MAX;
     }
@@ -1689,6 +1702,8 @@ static void virtio_pci_common_write(void *opaque, hwaddr addr,
     VirtIOPCIProxy *proxy = opaque;
     VirtIODevice *vdev = virtio_bus_get_device(&proxy->bus);
     uint16_t vector;
+
+    qemu_printf("qemu virtio_pci_common_write: addr=%lx val=%lx\n", addr, val);
 
     if (vdev == NULL) {
         return;

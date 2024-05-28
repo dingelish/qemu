@@ -21,6 +21,7 @@
  * THE SOFTWARE.
  */
 #include "qemu/osdep.h"
+#include "qemu/qemu-print.h"
 #include "qemu/error-report.h"
 #include "qemu/option.h"
 #include "qemu/cutils.h"
@@ -801,6 +802,7 @@ void x86_load_linux(X86MachineState *x86ms,
     struct setup_data *setup_data;
     const char *kernel_filename = machine->kernel_filename;
     const char *initrd_filename = machine->initrd_filename;
+    qemu_printf("QEMU found initrd_filename: %s\n", initrd_filename);
     const char *dtb_filename = machine->dtb;
     const char *kernel_cmdline = machine->kernel_cmdline;
     SevKernelLoaderContext sev_load_ctx = {};
@@ -826,9 +828,12 @@ void x86_load_linux(X86MachineState *x86ms,
     }
 
     /* kernel protocol version */
+    qemu_printf("QEMU checking kernel protocol version\n");
     if (ldl_p(header + 0x202) == 0x53726448) {
+        qemu_printf("QEMU detected 0x53726448\n");
         protocol = lduw_p(header + 0x206);
     } else {
+        qemu_printf("QEMU cannot find 0x53726448, could be a multiboot image\n");
         /*
          * This could be a multiboot kernel. If it is, let's stop treating it
          * like a Linux kernel.
@@ -899,6 +904,7 @@ void x86_load_linux(X86MachineState *x86ms,
         }
         protocol = 0;
     }
+    qemu_printf("QEMU checking kernel protocol version completed\n");
 
     if (protocol < 0x200 || !(header[0x211] & 0x01)) {
         /* Low kernel */
@@ -1000,12 +1006,14 @@ void x86_load_linux(X86MachineState *x86ms,
     }
 
     /* load initrd */
+    qemu_printf("QEMU starts initrd loading\n");
     if (initrd_filename) {
         GMappedFile *mapped_file;
         gsize initrd_size;
         gchar *initrd_data;
         GError *gerr = NULL;
 
+        qemu_printf("protocol is %u\n", protocol);
         if (protocol < 0x200) {
             fprintf(stderr, "qemu: linux kernel too old to load a ram disk\n");
             exit(1);
@@ -1021,6 +1029,7 @@ void x86_load_linux(X86MachineState *x86ms,
 
         initrd_data = g_mapped_file_get_contents(mapped_file);
         initrd_size = g_mapped_file_get_length(mapped_file);
+        qemu_printf("initrd_size = 0x%lx\n", initrd_size);
         if (initrd_size >= initrd_max) {
             fprintf(stderr, "qemu: initrd is too large, cannot support."
                     "(max: %"PRIu32", need %"PRId64")\n",
@@ -1029,6 +1038,7 @@ void x86_load_linux(X86MachineState *x86ms,
         }
 
         initrd_addr = (initrd_max - initrd_size) & ~4095;
+        qemu_printf("initrd_addr = 0x%lx\n", initrd_addr);
 
         fw_cfg_add_i32(fw_cfg, FW_CFG_INITRD_ADDR, initrd_addr);
         fw_cfg_add_i32(fw_cfg, FW_CFG_INITRD_SIZE, initrd_size);
@@ -1038,6 +1048,7 @@ void x86_load_linux(X86MachineState *x86ms,
 
         stl_p(header + 0x218, initrd_addr);
         stl_p(header + 0x21c, initrd_size);
+        qemu_printf("QEMU initrd loading completed\n");
     }
 
     /* load kernel and setup */

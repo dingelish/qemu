@@ -14,6 +14,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/qemu-print.h"
 #include "qemu/log.h"
 #include "qapi/error.h"
 #include "exec/memory.h"
@@ -485,6 +486,7 @@ static MemTxResult memory_region_write_accessor(MemoryRegion *mr,
                                                 uint64_t mask,
                                                 MemTxAttrs attrs)
 {
+    //qemu_printf("memory_region_write_accessor: hwaddr to %lx, value = %lu\n", addr, *value);
     uint64_t tmp = memory_region_shift_write_access(value, shift, mask);
 
     if (mr->subpage) {
@@ -1493,6 +1495,7 @@ MemTxResult memory_region_dispatch_write(MemoryRegion *mr,
                                          MemOp op,
                                          MemTxAttrs attrs)
 {
+    //qemu_printf("memory_region_dispatch_write: hwaddr: %lx\n", addr);
     unsigned size = memop_size(op);
 
     if (mr->alias) {

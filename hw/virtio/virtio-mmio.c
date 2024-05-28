@@ -20,6 +20,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/qemu-print.h"
 #include "standard-headers/linux/virtio_mmio.h"
 #include "hw/irq.h"
 #include "hw/qdev-properties.h"
@@ -648,10 +649,13 @@ static void virtio_mmio_reset(DeviceState *d)
 static int virtio_mmio_set_guest_notifier(DeviceState *d, int n, bool assign,
                                           bool with_irqfd)
 {
+    qemu_printf("virtio_mmio_set_guest_notifier: entering\n");
     VirtIOMMIOProxy *proxy = VIRTIO_MMIO(d);
     VirtIODevice *vdev = virtio_bus_get_device(&proxy->bus);
+    qemu_printf("virtio_mmio_set_guest_notifier: vdev = %p\n", vdev);
     VirtioDeviceClass *vdc = VIRTIO_DEVICE_GET_CLASS(vdev);
     VirtQueue *vq = virtio_get_queue(vdev, n);
+    qemu_printf("virtio_mmio_set_guest_notifier: vq = %p\n", vq);
     EventNotifier *notifier = virtio_queue_get_guest_notifier(vq);
 
     if (assign) {
