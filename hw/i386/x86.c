@@ -996,6 +996,7 @@ void x86_load_linux(X86MachineState *x86ms,
      * If this code is substantially changed, you may want to consider
      * incrementing the revision.
      */
+    qemu_printf("Boot protocol is: %x\n", protocol);
     if (protocol >= 0x200) {
         header[0x210] = 0xB0;
     }

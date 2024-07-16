@@ -2911,11 +2911,11 @@ MemTxResult address_space_read_full(AddressSpace *as, hwaddr addr,
 
     hwaddr detect_bit = (hwaddr)1 << 50; // virtio-net-pci req comes with this
     if (addr & detect_bit) {
-        qemu_printf("address_space_read: %lx, len: %lu, as: %p\n", addr, len, as);
+        // qemu_printf("address_space_read: %lx, len: %lu, as: %p\n", addr, len, as);
         hwaddr patch_bit = (hwaddr)1 << 51; // but cbit is missing
         if (!(addr & patch_bit)) {
             addr |= patch_bit;
-            qemu_printf("detected missing c-bit in read. adding it back: %lx\n", addr);
+            // qemu_printf("detected missing c-bit in read. adding it back: %lx\n", addr);
         }
     }
 
@@ -2934,11 +2934,11 @@ MemTxResult address_space_write(AddressSpace *as, hwaddr addr,
 {
     hwaddr detect_bit = (hwaddr)1 << 50; // virtio-net-pci req comes with this
     if (addr & detect_bit) {
-        qemu_printf("address_space_write: %lx, len: %lu, as: %p\n", addr, len, as);
+        // qemu_printf("address_space_write: %lx, len: %lu, as: %p\n", addr, len, as);
         hwaddr patch_bit = (hwaddr)1 << 51; // but cbit is missing
         if (!(addr & patch_bit)) {
             addr |= patch_bit;
-            qemu_printf("detected missing c-bit in write. adding it back: %lx\n", addr);
+            // qemu_printf("detected missing c-bit in write. adding it back: %lx\n", addr);
         }
     }
 

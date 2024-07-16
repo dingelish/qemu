@@ -16,6 +16,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/qemu-print.h"
 #include "qemu/error-report.h"
 #include "qemu/cutils.h"
 #include "qemu/units.h"
