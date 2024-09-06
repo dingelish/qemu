@@ -1,0 +1,32 @@
+From a040374d355d0009ba3fbee6139c10c3b5fbf11e Mon Sep 17 00:00:00 2001
+From: Xiaoyao Li <xiaoyao.li@intel.com>
+Date: Thu, 3 Nov 2022 22:34:07 +0800
+Subject: [PATCH 101/101] linux/kvm.h: Bump KVM_EXIT_MEMORY_FAULT &
+ KVM_EXIT_TDX
+
+To make with kvm-upstream-workaround branch.
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ linux-headers/linux/kvm.h | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/linux-headers/linux/kvm.h b/linux-headers/linux/kvm.h
+index 129cdad3c8..a7021ac216 100644
+--- a/linux-headers/linux/kvm.h
++++ b/linux-headers/linux/kvm.h
+@@ -362,8 +362,9 @@ struct kvm_tdx_exit {
+ #define KVM_EXIT_RISCV_SBI        35
+ #define KVM_EXIT_RISCV_CSR        36
+ #define KVM_EXIT_NOTIFY           37
+-#define KVM_EXIT_MEMORY_FAULT     38
+-#define KVM_EXIT_TDX              39
++
++#define KVM_EXIT_TDX              50
++#define KVM_EXIT_MEMORY_FAULT     100
+ 
+ /* For KVM_EXIT_INTERNAL_ERROR */
+ /* Emulate instruction failed. */
+-- 
+2.39.2
+

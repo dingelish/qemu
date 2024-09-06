@@ -1,0 +1,139 @@
+From 5077fc0b20effd0a60a9fbc31188aeae67563d0b Mon Sep 17 00:00:00 2001
+From: Isaku Yamahata <isaku.yamahata@intel.com>
+Date: Wed, 14 Apr 2021 12:17:49 -0700
+Subject: [PATCH 042/101] qom: implement property helper for sha384
+
+Implement property_add_sha384() which converts hex string <-> uint8_t[48]
+It will be used for TDX which uses sha384 for measurement.
+
+Signed-off-by: Isaku Yamahata <isaku.yamahata@intel.com>
+---
+ include/qom/object.h | 17 ++++++++++
+ qom/object.c         | 76 ++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 93 insertions(+)
+
+diff --git a/include/qom/object.h b/include/qom/object.h
+index ef7258a5e1..70399a5b19 100644
+--- a/include/qom/object.h
++++ b/include/qom/object.h
+@@ -1887,6 +1887,23 @@ ObjectProperty *object_property_add_alias(Object *obj, const char *name,
+ ObjectProperty *object_property_add_const_link(Object *obj, const char *name,
+                                                Object *target);
+ 
++
++/**
++ * object_property_add_sha384:
++ * @obj: the object to add a property to
++ * @name: the name of the property
++ * @v: pointer to value
++ * @flags: bitwise-or'd ObjectPropertyFlags
++ *
++ * Add an sha384 property in memory.  This function will add a
++ * property of type 'sha384'.
++ *
++ * Returns: The newly added property on success, or %NULL on failure.
++ */
++ObjectProperty * object_property_add_sha384(Object *obj, const char *name,
++                                            const uint8_t *v,
++                                            ObjectPropertyFlags flags);
++
+ /**
+  * object_property_set_description:
+  * @obj: the object owning the property
+diff --git a/qom/object.c b/qom/object.c
+index e25f1e96db..e71ce46ed5 100644
+--- a/qom/object.c
++++ b/qom/object.c
+@@ -15,6 +15,7 @@
+ #include "qapi/error.h"
+ #include "qom/object.h"
+ #include "qom/object_interfaces.h"
++#include "qemu/ctype.h"
+ #include "qemu/cutils.h"
+ #include "qemu/memalign.h"
+ #include "qapi/visitor.h"
+@@ -2781,6 +2782,81 @@ object_property_add_alias(Object *obj, const char *name,
+     return op;
+ }
+ 
++#define SHA384_DIGEST_SIZE      48
++static void property_get_sha384(Object *obj, Visitor *v, const char *name,
++                                void *opaque, Error **errp)
++{
++    uint8_t *value = (uint8_t *)opaque;
++    char str[SHA384_DIGEST_SIZE * 2 + 1];
++    char *str_ = (char*)str;
++    size_t i;
++
++    for (i = 0; i < SHA384_DIGEST_SIZE; i++) {
++        char *buf;
++        buf = &str[i * 2];
++
++        sprintf(buf, "%02hhx", value[i]);
++    }
++    str[SHA384_DIGEST_SIZE * 2] = '\0';
++
++    visit_type_str(v, name, &str_, errp);
++}
++
++static void property_set_sha384(Object *obj, Visitor *v, const char *name,
++                                    void *opaque, Error **errp)
++{
++    uint8_t *value = (uint8_t *)opaque;
++    char* str;
++    size_t len;
++    size_t i;
++
++    if (!visit_type_str(v, name, &str, errp)) {
++        goto err;
++    }
++
++    len = strlen(str);
++    if (len != SHA384_DIGEST_SIZE * 2) {
++        error_setg(errp, "invalid length for sha348 hex string %s. "
++                   "it must be 48 * 2 hex", name);
++        goto err;
++    }
++
++    for (i = 0; i < SHA384_DIGEST_SIZE; i++) {
++        if (!qemu_isxdigit(str[i * 2]) || !qemu_isxdigit(str[i * 2 + 1])) {
++            error_setg(errp, "invalid char for sha318 hex string %s at %c%c",
++                       name, str[i * 2], str[i * 2 + 1]);
++            goto err;
++        }
++
++        if (sscanf(str + i * 2, "%02hhx", &value[i]) != 1) {
++            error_setg(errp, "invalid format for sha318 hex string %s", name);
++            goto err;
++        }
++    }
++
++err:
++    g_free(str);
++}
++
++ObjectProperty *
++object_property_add_sha384(Object *obj, const char *name,
++                           const uint8_t *v, ObjectPropertyFlags flags)
++{
++    ObjectPropertyAccessor *getter = NULL;
++    ObjectPropertyAccessor *setter = NULL;
++
++    if ((flags & OBJ_PROP_FLAG_READ) == OBJ_PROP_FLAG_READ) {
++        getter = property_get_sha384;
++    }
++
++    if ((flags & OBJ_PROP_FLAG_WRITE) == OBJ_PROP_FLAG_WRITE) {
++        setter = property_set_sha384;
++    }
++
++    return object_property_add(obj, name, "sha384",
++                               getter, setter, NULL, (void *)v);
++}
++
+ void object_property_set_description(Object *obj, const char *name,
+                                      const char *description)
+ {
+-- 
+2.39.2
+

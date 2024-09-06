@@ -1,0 +1,66 @@
+From 3168e41893f0d6a74960703392674cd405c19ce3 Mon Sep 17 00:00:00 2001
+From: Isaku Yamahata <isaku.yamahata@intel.com>
+Date: Thu, 13 Jul 2023 00:30:11 -0700
+Subject: [PATCH 066/101] i386/tdx: Limit the range size for MapGPA
+
+If the range for TDG.VP.VMCALL<MapGPA> is too large, process the limited
+size and return retry error.  It's bad for VMM to take too long time,
+e.g. second order, with blocking vcpu execution.  It results in too many
+missing timer interrupts.
+
+Signed-off-by: Isaku Yamahata <isaku.yamahata@intel.com>
+---
+ target/i386/kvm/tdx.c | 19 ++++++++++++++++++-
+ 1 file changed, 18 insertions(+), 1 deletion(-)
+
+diff --git a/target/i386/kvm/tdx.c b/target/i386/kvm/tdx.c
+index f10d00381f..dbf24f7ca9 100644
+--- a/target/i386/kvm/tdx.c
++++ b/target/i386/kvm/tdx.c
+@@ -994,12 +994,16 @@ static hwaddr tdx_shared_bit(X86CPU *cpu)
+     return (cpu->phys_bits > 48) ? BIT_ULL(51) : BIT_ULL(47);
+ }
+ 
++/* 64MB at most in one call. What value is appropriate? */
++#define TDX_MAP_GPA_MAX_LEN     (64 * 1024 * 1024)
++
+ static void tdx_handle_map_gpa(X86CPU *cpu, struct kvm_tdx_vmcall *vmcall)
+ {
+     hwaddr shared_bit = tdx_shared_bit(cpu);
+     hwaddr gpa = vmcall->in_r12 & ~shared_bit;
+     bool private = !(vmcall->in_r12 & shared_bit);
+     hwaddr size = vmcall->in_r13;
++    bool retry = false;
+     int ret = 0;
+ 
+     vmcall->status_code = TDG_VP_VMCALL_INVALID_OPERAND;
+@@ -1018,12 +1022,25 @@ static void tdx_handle_map_gpa(X86CPU *cpu, struct kvm_tdx_vmcall *vmcall)
+         return;
+     }
+ 
++    if (size > TDX_MAP_GPA_MAX_LEN) {
++        retry = true;
++        size = TDX_MAP_GPA_MAX_LEN;
++    }
++
+     if (size > 0) {
+         ret = kvm_convert_memory(gpa, size, private);
+     }
+ 
+     if (!ret) {
+-        vmcall->status_code = TDG_VP_VMCALL_SUCCESS;
++        if (retry) {
++            vmcall->status_code = TDG_VP_VMCALL_RETRY;
++            vmcall->out_r11 = gpa + size;
++            if (!private) {
++                vmcall->out_r11 |= shared_bit;
++            }
++        } else {
++            vmcall->status_code = TDG_VP_VMCALL_SUCCESS;
++        }
+     }
+ }
+ 
+-- 
+2.39.2
+

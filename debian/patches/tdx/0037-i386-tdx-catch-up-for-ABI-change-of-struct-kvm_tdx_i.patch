@@ -1,0 +1,49 @@
+From 0442bcbcd29883a8f1b74028e95951c47ae83945 Mon Sep 17 00:00:00 2001
+From: Isaku Yamahata <isaku.yamahata@intel.com>
+Date: Mon, 27 Feb 2023 00:25:31 -0800
+Subject: [PATCH 037/101] i386/tdx: catch up for ABI change of struct
+ kvm_tdx_init_vm
+
+TDX KVM v12 changes the ABI of KVM_TDX_INIT_VM strudct kvm_tdx_init_vm.
+Catch up the struct change.
+
+Signed-off-by: Isaku Yamahata <isaku.yamahata@intel.com>
+
+i386/tdx: Eliminate compat code for old ABI of struct kvm_tdx_init_vm
+
+Signed-off-by: Isaku Yamahata <isaku.yamahata@intel.com>
+---
+ target/i386/kvm/tdx.c | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/target/i386/kvm/tdx.c b/target/i386/kvm/tdx.c
+index 849f269fa0..4f9565bba1 100644
+--- a/target/i386/kvm/tdx.c
++++ b/target/i386/kvm/tdx.c
+@@ -463,7 +463,10 @@ int tdx_pre_create_vcpu(CPUState *cpu)
+     MachineState *ms = MACHINE(qdev_get_machine());
+     X86CPU *x86cpu = X86_CPU(cpu);
+     CPUX86State *env = &x86cpu->env;
+-    struct kvm_tdx_init_vm init_vm;
++    union {
++        struct kvm_tdx_init_vm init_vm;
++        uint8_t data[16 * 1024];
++    } init_vm;
+     int r = 0;
+ 
+     qemu_mutex_lock(&tdx_guest->lock);
+@@ -478,9 +481,9 @@ int tdx_pre_create_vcpu(CPUState *cpu)
+     }
+ 
+     memset(&init_vm, 0, sizeof(init_vm));
+-    init_vm.cpuid.nent = kvm_x86_arch_cpuid(env, init_vm.cpuid.entries, 0);
++    init_vm.init_vm.cpuid.nent = kvm_x86_arch_cpuid(env, init_vm.init_vm.cpuid.entries, 0);
+ 
+-    init_vm.attributes = tdx_guest->attributes;
++    init_vm.init_vm.attributes = tdx_guest->attributes;
+ 
+     do {
+         r = tdx_vm_ioctl(KVM_TDX_INIT_VM, 0, &init_vm);
+-- 
+2.39.2
+

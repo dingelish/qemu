@@ -1,0 +1,99 @@
+From dffee57601abbf55c3c4221b671fb3ffb4f7ddfe Mon Sep 17 00:00:00 2001
+From: Isaku Yamahata <isaku.yamahata@intel.com>
+Date: Wed, 14 Apr 2021 12:17:51 -0700
+Subject: [PATCH 043/101] i386/tdx: Allows mrconfigid/mrowner/mrownerconfig for
+ TDX_INIT_VM
+
+When creating TDX vm, three sha384 hash values can be provided for
+TDX attestation.
+
+So far they were hard coded as 0. Now allow user to specify those values
+via property mrconfigid, mrowner and mrownerconfig. String for those
+properties are hex string of 48 * 2 length.
+
+example
+-object tdx-guest, \
+  mrconfigid=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef, \
+  mrowner=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210, \
+  mrownerconfig=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+
+Signed-off-by: Isaku Yamahata <isaku.yamahata@intel.com>
+---
+ qapi/qom.json         | 11 ++++++++++-
+ target/i386/kvm/tdx.c | 13 +++++++++++++
+ target/i386/kvm/tdx.h |  3 +++
+ 3 files changed, 26 insertions(+), 1 deletion(-)
+
+diff --git a/qapi/qom.json b/qapi/qom.json
+index e137c3926c..e039638624 100644
+--- a/qapi/qom.json
++++ b/qapi/qom.json
+@@ -851,10 +851,19 @@
+ #
+ # @sept-ve-disable: bit 28 of TD attributes (default: 0)
+ #
++# @mrconfigid: MRCONFIGID SHA384 hex string of 48 * 2 length (default: 0)
++#
++# @mrowner: MROWNER SHA384 hex string of 48 * 2 length (default: 0)
++#
++# @mrownerconfig: MROWNERCONFIG SHA384 hex string of 48 * 2 length (default: 0)
++#
+ # Since: 8.2
+ ##
+ { 'struct': 'TdxGuestProperties',
+-  'data': { '*sept-ve-disable': 'bool' } }
++  'data': { '*sept-ve-disable': 'bool',
++            '*mrconfigid': 'str',
++            '*mrowner': 'str',
++            '*mrownerconfig': 'str' } }
+ 
+ ##
+ # @ThreadContextProperties:
+diff --git a/target/i386/kvm/tdx.c b/target/i386/kvm/tdx.c
+index a75b91d60c..c4e8dce1f1 100644
+--- a/target/i386/kvm/tdx.c
++++ b/target/i386/kvm/tdx.c
+@@ -523,6 +523,13 @@ int tdx_pre_create_vcpu(CPUState *cpu)
+ 
+     init_vm.init_vm.attributes = tdx_guest->attributes;
+ 
++    QEMU_BUILD_BUG_ON(sizeof(init_vm.init_vm.mrconfigid) != sizeof(tdx_guest->mrconfigid));
++    QEMU_BUILD_BUG_ON(sizeof(init_vm.init_vm.mrowner) != sizeof(tdx_guest->mrowner));
++    QEMU_BUILD_BUG_ON(sizeof(init_vm.init_vm.mrownerconfig) != sizeof(tdx_guest->mrownerconfig));
++    memcpy(init_vm.init_vm.mrconfigid, tdx_guest->mrconfigid, sizeof(tdx_guest->mrconfigid));
++    memcpy(init_vm.init_vm.mrowner, tdx_guest->mrowner, sizeof(tdx_guest->mrowner));
++    memcpy(init_vm.init_vm.mrownerconfig, tdx_guest->mrownerconfig, sizeof(tdx_guest->mrownerconfig));
++
+     do {
+         r = tdx_vm_ioctl(KVM_TDX_INIT_VM, 0, &init_vm);
+     } while (r == -EAGAIN);
+@@ -575,6 +582,12 @@ static void tdx_guest_init(Object *obj)
+     object_property_add_bool(obj, "sept-ve-disable",
+                              tdx_guest_get_sept_ve_disable,
+                              tdx_guest_set_sept_ve_disable);
++    object_property_add_sha384(obj, "mrconfigid", tdx->mrconfigid,
++                               OBJ_PROP_FLAG_READWRITE);
++    object_property_add_sha384(obj, "mrowner", tdx->mrowner,
++                               OBJ_PROP_FLAG_READWRITE);
++    object_property_add_sha384(obj, "mrownerconfig", tdx->mrownerconfig,
++                               OBJ_PROP_FLAG_READWRITE);
+ }
+ 
+ static void tdx_guest_finalize(Object *obj)
+diff --git a/target/i386/kvm/tdx.h b/target/i386/kvm/tdx.h
+index 46a24ee8c7..68f8327f22 100644
+--- a/target/i386/kvm/tdx.h
++++ b/target/i386/kvm/tdx.h
+@@ -21,6 +21,9 @@ typedef struct TdxGuest {
+ 
+     bool initialized;
+     uint64_t attributes;    /* TD attributes */
++    uint8_t mrconfigid[48];     /* sha348 digest */
++    uint8_t mrowner[48];        /* sha348 digest */
++    uint8_t mrownerconfig[48];  /* sha348 digest */
+ } TdxGuest;
+ 
+ #ifdef CONFIG_TDX
+-- 
+2.39.2
+

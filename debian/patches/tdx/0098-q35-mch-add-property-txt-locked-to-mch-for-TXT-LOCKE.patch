@@ -1,0 +1,86 @@
+From 721413420d6cb0a21fe8c6ecdc0cdcf201e9ec16 Mon Sep 17 00:00:00 2001
+From: Isaku Yamahata <isaku.yamahata@intel.com>
+Date: Wed, 30 Dec 2020 22:19:34 -0800
+Subject: [PATCH 098/101] q35/mch: add property txt-locked to mch for
+ TXT-LOCKED register
+
+MCH has register type of locked which can be locked by TXT and
+D_LCK bit.
+Add a property, "txt-locked", to emulate TXT locked registers.
+and Initialized those locked register as if initialized by firmware.
+Only PCIXBAR and PAM have TXT-locked register.
+Qemu doesn't emulate other TXT-locked registers.
+
+"-global mch.txt-locked=on" to enable this feature.
+
+Signed-off-by: Isaku Yamahata <isaku.yamahata@intel.com>
+---
+ hw/pci-host/q35.c         | 17 ++++++++++++++---
+ include/hw/pci-host/q35.h |  2 ++
+ 2 files changed, 16 insertions(+), 3 deletions(-)
+
+diff --git a/hw/pci-host/q35.c b/hw/pci-host/q35.c
+index 604e5f86c4..adcd243481 100644
+--- a/hw/pci-host/q35.c
++++ b/hw/pci-host/q35.c
+@@ -553,8 +553,10 @@ static void mch_reset(DeviceState *qdev)
+     PCIDevice *d = PCI_DEVICE(qdev);
+     MCHPCIState *mch = MCH_PCI_DEVICE(d);
+ 
+-    pci_set_quad(d->config + MCH_HOST_BRIDGE_PCIEXBAR,
+-                 MCH_HOST_BRIDGE_PCIEXBAR_DEFAULT);
++    if (!mch->txt_locked) {
++        pci_set_quad(d->config + MCH_HOST_BRIDGE_PCIEXBAR,
++                     MCH_HOST_BRIDGE_PCIEXBAR_DEFAULT);
++    }
+ 
+     if (mch->has_smm_ranges) {
+         d->config[MCH_HOST_BRIDGE_SMRAM] = MCH_HOST_BRIDGE_SMRAM_DEFAULT;
+@@ -584,7 +586,15 @@ static void mch_realize(PCIDevice *d, Error **errp)
+                    mch->ext_tseg_mbytes);
+         return;
+     }
+-
++    if (mch->txt_locked) {
++        pci_set_quad(d->config + MCH_HOST_BRIDGE_PCIEXBAR,
++                     MCH_HOST_BRIDGE_PCIEXBAR_DEFAULT_TXT_LOCKED);
++        pci_set_quad(d->wmask + MCH_HOST_BRIDGE_PCIEXBAR, 0);
++        for (i = 0; i < MCH_HOST_BRIDGE_PAM_NB; i++) {
++            pci_set_byte(d->config + MCH_HOST_BRIDGE_PAM0 + i, 0);
++            pci_set_byte(d->wmask + MCH_HOST_BRIDGE_PAM0 + i, 0);
++        }
++    }
+     /* setup pci memory mapping */
+     pc_pci_as_mapping_init(mch->system_memory, mch->pci_address_space);
+ 
+@@ -684,6 +694,7 @@ static Property mch_props[] = {
+     DEFINE_PROP_UINT16("extended-tseg-mbytes", MCHPCIState, ext_tseg_mbytes,
+                        16),
+     DEFINE_PROP_BOOL("smbase-smram", MCHPCIState, has_smram_at_smbase, true),
++    DEFINE_PROP_BOOL("txt-locked", MCHPCIState, txt_locked, false),
+     DEFINE_PROP_END_OF_LIST(),
+ };
+ 
+diff --git a/include/hw/pci-host/q35.h b/include/hw/pci-host/q35.h
+index e6f7d322fa..ad3db4ad14 100644
+--- a/include/hw/pci-host/q35.h
++++ b/include/hw/pci-host/q35.h
+@@ -51,6 +51,7 @@ struct MCHPCIState {
+     MemoryRegion smbase_blackhole, smbase_window;
+     bool has_smram_at_smbase;
+     bool has_smm_ranges;
++    bool txt_locked;
+     Range pci_hole;
+     uint64_t below_4g_mem_size;
+     uint64_t above_4g_mem_size;
+@@ -104,6 +105,7 @@ struct Q35PCIHost {
+ #define MCH_HOST_BRIDGE_PCIEXBAR               0x60    /* 64bit register */
+ #define MCH_HOST_BRIDGE_PCIEXBAR_SIZE          8       /* 64bit register */
+ #define MCH_HOST_BRIDGE_PCIEXBAR_DEFAULT       0xb0000000
++#define MCH_HOST_BRIDGE_PCIEXBAR_DEFAULT_TXT_LOCKED 0xb0000001
+ #define MCH_HOST_BRIDGE_PCIEXBAR_MAX           (0x10000000) /* 256M */
+ #define MCH_HOST_BRIDGE_PCIEXBAR_ADMSK         Q35_MASK(64, 35, 28)
+ #define MCH_HOST_BRIDGE_PCIEXBAR_128ADMSK      ((uint64_t)(1 << 26))
+-- 
+2.39.2
+

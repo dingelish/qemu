@@ -1,0 +1,93 @@
+From 238f588a8f3172958218533f6674c490c36f5b87 Mon Sep 17 00:00:00 2001
+From: Zhu Lingshan <lingshan.zhu@intel.com>
+Date: Thu, 24 Aug 2023 01:12:31 +0800
+Subject: [PATCH 005/101] RAMBlock: Support KVM gmemory
+
+Add KVM gmem support to RAMBlock so we can have both normal
+hva based memory and gmem fd based memory in one RAMBlock.
+
+The gmem part is represented by the gmem_fd.
+
+Signed-off-by: Chao Peng <chao.p.peng@linux.intel.com>
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ include/exec/memory.h   | 8 ++++++++
+ include/exec/ramblock.h | 1 +
+ softmmu/memory.c        | 9 +++++++++
+ softmmu/physmem.c       | 2 ++
+ 4 files changed, 20 insertions(+)
+
+diff --git a/include/exec/memory.h b/include/exec/memory.h
+index 15ade918ba..ad01478a9b 100644
+--- a/include/exec/memory.h
++++ b/include/exec/memory.h
+@@ -1359,6 +1359,14 @@ void memory_region_init_ram_from_fd(MemoryRegion *mr,
+                                     int fd,
+                                     ram_addr_t offset,
+                                     Error **errp);
++/**
++ * memory_region_set_gmem_fd:  Set RAM memory region with a restricted fd.
++ *
++ * @mr: the #MemoryRegion to be set.
++ * @fd: the fd to provide restricted memory.
++ */
++void memory_region_set_gmem_fd(MemoryRegion *mr, int fd);
++
+ #endif
+ 
+ /**
+diff --git a/include/exec/ramblock.h b/include/exec/ramblock.h
+index adc03df59c..e5987250a7 100644
+--- a/include/exec/ramblock.h
++++ b/include/exec/ramblock.h
+@@ -30,6 +30,7 @@ struct RAMBlock {
+     uint8_t *host;
+     uint8_t *colo_cache; /* For colo, VM's ram cache */
+     ram_addr_t offset;
++    int gmem_fd;
+     ram_addr_t used_length;
+     ram_addr_t max_length;
+     void (*resized)(const char*, uint64_t length, void *host);
+diff --git a/softmmu/memory.c b/softmmu/memory.c
+index b1a6cae6f5..75576477c3 100644
+--- a/softmmu/memory.c
++++ b/softmmu/memory.c
+@@ -1642,6 +1642,15 @@ void memory_region_init_ram_from_fd(MemoryRegion *mr,
+         error_propagate(errp, err);
+     }
+ }
++
++void memory_region_set_gmem_fd(MemoryRegion *mr, int fd)
++{
++    if (mr->ram_block) {
++        assert(fd >= 0);
++        mr->ram_block->gmem_fd = fd;
++    }
++}
++
+ #endif
+ 
+ void memory_region_init_ram_ptr(MemoryRegion *mr,
+diff --git a/softmmu/physmem.c b/softmmu/physmem.c
+index 0e0182d9f2..50861989ab 100644
+--- a/softmmu/physmem.c
++++ b/softmmu/physmem.c
+@@ -1909,6 +1909,7 @@ RAMBlock *qemu_ram_alloc_from_fd(ram_addr_t size, MemoryRegion *mr,
+     new_block->used_length = size;
+     new_block->max_length = size;
+     new_block->flags = ram_flags;
++    new_block->gmem_fd = -1;
+     new_block->host = file_ram_alloc(new_block, size, fd, readonly,
+                                      !file_size, offset, errp);
+     if (!new_block->host) {
+@@ -1978,6 +1979,7 @@ RAMBlock *qemu_ram_alloc_internal(ram_addr_t size, ram_addr_t max_size,
+     new_block->max_length = max_size;
+     assert(max_size >= size);
+     new_block->fd = -1;
++    new_block->gmem_fd = -1;
+     new_block->page_size = qemu_real_host_page_size();
+     new_block->host = host;
+     new_block->flags = ram_flags;
+-- 
+2.39.2
+

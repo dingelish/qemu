@@ -1,0 +1,55 @@
+From 8bae8b5deb2eef767285a9882b6d1ffca171086e Mon Sep 17 00:00:00 2001
+From: Xiaoyao Li <xiaoyao.li@intel.com>
+Date: Thu, 31 Mar 2022 14:47:41 +0800
+Subject: [PATCH 050/101] i386/tdx: Skip BIOS shadowing setup
+
+TDX doesn't support map different GPAs to same private memory. Thus,
+aliasing top 128KB of BIOS as isa-bios is not supported.
+
+On the other hand, TDX guest cannot go to real mode, it can work fine
+without isa-bios.
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ hw/i386/x86.c | 25 ++++++++++++++-----------
+ 1 file changed, 14 insertions(+), 11 deletions(-)
+
+diff --git a/hw/i386/x86.c b/hw/i386/x86.c
+index dabd33cb83..e2a1369e5d 100644
+--- a/hw/i386/x86.c
++++ b/hw/i386/x86.c
+@@ -1175,17 +1175,20 @@ void x86_bios_rom_init(MachineState *ms, const char *default_firmware,
+     }
+     g_free(filename);
+ 
+-    /* map the last 128KB of the BIOS in ISA space */
+-    isa_bios_size = MIN(bios_size, 128 * KiB);
+-    isa_bios = g_malloc(sizeof(*isa_bios));
+-    memory_region_init_alias(isa_bios, NULL, "isa-bios", bios,
+-                             bios_size - isa_bios_size, isa_bios_size);
+-    memory_region_add_subregion_overlap(rom_memory,
+-                                        0x100000 - isa_bios_size,
+-                                        isa_bios,
+-                                        1);
+-    if (!isapc_ram_fw) {
+-        memory_region_set_readonly(isa_bios, true);
++    /* For TDX, alias different GPAs to same private memory is not supported */
++    if (!is_tdx_vm()) {
++        /* map the last 128KB of the BIOS in ISA space */
++        isa_bios_size = MIN(bios_size, 128 * KiB);
++        isa_bios = g_malloc(sizeof(*isa_bios));
++        memory_region_init_alias(isa_bios, NULL, "isa-bios", bios,
++                                bios_size - isa_bios_size, isa_bios_size);
++        memory_region_add_subregion_overlap(rom_memory,
++                                            0x100000 - isa_bios_size,
++                                            isa_bios,
++                                            1);
++        if (!isapc_ram_fw) {
++            memory_region_set_readonly(isa_bios, true);
++        }
+     }
+ 
+     /* map all the bios at the top of memory */
+-- 
+2.39.2
+

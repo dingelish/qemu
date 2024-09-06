@@ -1,0 +1,120 @@
+From 0b78aee069a9ab8376afdb44e064fb60057cd807 Mon Sep 17 00:00:00 2001
+From: Xiaoyao Li <xiaoyao.li@intel.com>
+Date: Fri, 22 Jul 2022 18:38:12 +0800
+Subject: [PATCH 033/101] i386/tdx: Integrate tdx_caps->attrs_fixed0/1 to
+ tdx_cpuid_lookup
+
+Some bits in TD attributes have corresponding CPUID feature bits. Reflect
+the fixed0/1 restriction on TD attributes to their corresponding CPUID
+bits in tdx_cpuid_lookup[] as well.
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ target/i386/cpu-internal.h |  9 +++++++++
+ target/i386/cpu.c          |  9 ---------
+ target/i386/cpu.h          |  2 ++
+ target/i386/kvm/tdx.c      | 21 +++++++++++++++++++++
+ 4 files changed, 32 insertions(+), 9 deletions(-)
+
+diff --git a/target/i386/cpu-internal.h b/target/i386/cpu-internal.h
+index 9baac5c0b4..e980f6e314 100644
+--- a/target/i386/cpu-internal.h
++++ b/target/i386/cpu-internal.h
+@@ -20,6 +20,15 @@
+ #ifndef I386_CPU_INTERNAL_H
+ #define I386_CPU_INTERNAL_H
+ 
++typedef struct FeatureMask {
++    FeatureWord index;
++    uint64_t mask;
++} FeatureMask;
++
++typedef struct FeatureDep {
++    FeatureMask from, to;
++} FeatureDep;
++
+ typedef enum FeatureWordType {
+    CPUID_FEATURE_WORD,
+    MSR_FEATURE_WORD,
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index 30205ca555..cc333d9775 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -1291,15 +1291,6 @@ FeatureWordInfo feature_word_info[FEATURE_WORDS] = {
+     },
+ };
+ 
+-typedef struct FeatureMask {
+-    FeatureWord index;
+-    uint64_t mask;
+-} FeatureMask;
+-
+-typedef struct FeatureDep {
+-    FeatureMask from, to;
+-} FeatureDep;
+-
+ static FeatureDep feature_dependencies[] = {
+     {
+         .from = { FEAT_7_0_EDX,             CPUID_7_0_EDX_ARCH_CAPABILITIES },
+diff --git a/target/i386/cpu.h b/target/i386/cpu.h
+index ba6f3675c1..1fcef36269 100644
+--- a/target/i386/cpu.h
++++ b/target/i386/cpu.h
+@@ -872,6 +872,8 @@ uint64_t x86_cpu_get_supported_feature_word(FeatureWord w,
+ #define CPUID_7_0_ECX_MAWAU             (31U << 17)
+ /* Read Processor ID */
+ #define CPUID_7_0_ECX_RDPID             (1U << 22)
++/* KeyLocker */
++#define CPUID_7_0_ECX_KeyLocker         (1U << 23)
+ /* Bus Lock Debug Exception */
+ #define CPUID_7_0_ECX_BUS_LOCK_DETECT   (1U << 24)
+ /* Cache Line Demote Instruction */
+diff --git a/target/i386/kvm/tdx.c b/target/i386/kvm/tdx.c
+index 19aed03f12..29f50fb952 100644
+--- a/target/i386/kvm/tdx.c
++++ b/target/i386/kvm/tdx.c
+@@ -32,6 +32,13 @@
+                                      (1U << KVM_FEATURE_PV_SCHED_YIELD) | \
+                                      (1U << KVM_FEATURE_MSI_EXT_DEST_ID))
+ 
++#define TDX_ATTRIBUTES_MAX_BITS      64
++
++static FeatureMask tdx_attrs_ctrl_fields[TDX_ATTRIBUTES_MAX_BITS] = {
++    [30] = { .index = FEAT_7_0_ECX, .mask = CPUID_7_0_ECX_PKS },
++    [31] = { .index = FEAT_7_0_ECX, .mask = CPUID_7_0_ECX_KeyLocker},
++};
++
+ typedef struct KvmTdxCpuidLookup {
+     uint32_t tdx_fixed0;
+     uint32_t tdx_fixed1;
+@@ -375,6 +382,8 @@ static void update_tdx_cpuid_lookup_by_tdx_caps(void)
+     FeatureWordInfo *fi;
+     uint32_t config;
+     FeatureWord w;
++    FeatureMask *fm;
++    int i;
+ 
+     /*
+      * Patch tdx_fixed0/1 by tdx_caps that what TDX module reports as
+@@ -396,6 +405,18 @@ static void update_tdx_cpuid_lookup_by_tdx_caps(void)
+         entry->tdx_fixed1 &= ~config;
+     }
+ 
++    for (i = 0; i < ARRAY_SIZE(tdx_attrs_ctrl_fields); i++) {
++        fm = &tdx_attrs_ctrl_fields[i];
++
++        if (tdx_caps->attrs_fixed0 & (1ULL << i)) {
++            tdx_cpuid_lookup[fm->index].tdx_fixed0 |= fm->mask;
++        }
++
++        if (tdx_caps->attrs_fixed1 & (1ULL << i)) {
++            tdx_cpuid_lookup[fm->index].tdx_fixed1 |= fm->mask;
++        }
++    }
++
+     /*
+      * Because KVM gets XFAM settings via CPUID leaves 0xD,  map
+      * tdx_caps->xfam_fixed{0, 1} into tdx_cpuid_lookup[].tdx_fixed{0, 1}.
+-- 
+2.39.2
+

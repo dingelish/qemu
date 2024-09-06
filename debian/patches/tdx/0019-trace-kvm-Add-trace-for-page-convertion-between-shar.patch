@@ -1,0 +1,38 @@
+From 18049535f457339cf03c16e5ab0dbd4bf6e67cbe Mon Sep 17 00:00:00 2001
+From: Isaku Yamahata <isaku.yamahata@intel.com>
+Date: Tue, 16 Aug 2022 11:12:36 -0700
+Subject: [PATCH 019/101] trace/kvm: Add trace for page convertion between
+ shared and private
+
+Signed-off-by: Isaku Yamahata <isaku.yamahata@intel.com>
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ accel/kvm/kvm-all.c    | 1 +
+ accel/kvm/trace-events | 2 +-
+ 2 files changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/accel/kvm/kvm-all.c b/accel/kvm/kvm-all.c
+index 73f64cb851..145cb59f65 100644
+--- a/accel/kvm/kvm-all.c
++++ b/accel/kvm/kvm-all.c
+@@ -2998,6 +2998,7 @@ static int kvm_convert_memory(hwaddr start, hwaddr size, bool to_private)
+     ram_addr_t offset;
+     int ret = -1;
+ 
++    trace_kvm_convert_memory(start, size, to_private ? "shared_to_private" : "private_to_shared");
+     section = memory_region_find(get_system_memory(), start, size);
+     if (!section.mr) {
+         return ret;
+diff --git a/accel/kvm/trace-events b/accel/kvm/trace-events
+index 80694683ac..4935c9c5cf 100644
+--- a/accel/kvm/trace-events
++++ b/accel/kvm/trace-events
+@@ -25,4 +25,4 @@ kvm_dirty_ring_reaper(const char *s) "%s"
+ kvm_dirty_ring_reap(uint64_t count, int64_t t) "reaped %"PRIu64" pages (took %"PRIi64" us)"
+ kvm_dirty_ring_reaper_kick(const char *reason) "%s"
+ kvm_dirty_ring_flush(int finished) "%d"
+-
++kvm_convert_memory(uint64_t start, uint64_t size, const char *msg) "start 0x%" PRIx64 " size 0x%" PRIx64 " %s"
+-- 
+2.39.2
+

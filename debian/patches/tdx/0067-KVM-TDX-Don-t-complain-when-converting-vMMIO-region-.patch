@@ -1,0 +1,49 @@
+From 9df3a40206dece99713bf9157b8d1a534953592e Mon Sep 17 00:00:00 2001
+From: Isaku Yamahata <isaku.yamahata@intel.com>
+Date: Fri, 10 Mar 2023 00:54:38 -0800
+Subject: [PATCH 067/101] KVM: TDX: Don't complain when converting vMMIO region
+ to shared
+
+Because vMMIO region needs to be shared region, guest TD may explicitly
+convert such region from private to shared.  Don't complain such
+conversion.
+
+Signed-off-by: Isaku Yamahata <isaku.yamahata@intel.com>
+---
+ accel/kvm/kvm-all.c | 20 ++++++++++++++++++--
+ 1 file changed, 18 insertions(+), 2 deletions(-)
+
+diff --git a/accel/kvm/kvm-all.c b/accel/kvm/kvm-all.c
+index f8f86c19f4..2e1bd0f0d1 100644
+--- a/accel/kvm/kvm-all.c
++++ b/accel/kvm/kvm-all.c
+@@ -3044,8 +3044,24 @@ int kvm_convert_memory(hwaddr start, hwaddr size, bool to_private)
+          */
+         ram_block_convert_range(rb, offset, size, to_private);
+     } else {
+-        warn_report("Convert non guest-memfd backed memory region (0x%"HWADDR_PRIx" ,+ 0x%"HWADDR_PRIx") to %s",
+-                    start, size, to_private ? "private" : "shared");
++        MemoryRegion *mr = section.mr;
++
++        /*
++         * Because vMMIO region must be shared, guest TD may convert vMMIO
++         * region to shared explicitly.  Don't complain such case.  See
++         * memory_region_type() for checking if the region is MMIO region.
++         */
++        if (to_private ||
++            memory_region_is_ram(mr) ||
++            memory_region_is_ram_device(mr) ||
++            memory_region_is_rom(mr) ||
++            memory_region_is_romd(mr)) {
++            warn_report("Convert non guest-memfd backed memory region (0x%"HWADDR_PRIx" ,+ 0x%"HWADDR_PRIx") of %s to %s",
++                        start, size, mr->name, to_private ? "private" : "shared");
++	    } else {
++		    ret = 0;
++	    }
++
+     }
+ 
+     memory_region_unref(section.mr);
+-- 
+2.39.2
+

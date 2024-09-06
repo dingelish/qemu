@@ -1,0 +1,85 @@
+From 2aba9f75fb3c36b498bb7a56c33a6b569b61c055 Mon Sep 17 00:00:00 2001
+From: Xiaoyao Li <xiaoyao.li@intel.com>
+Date: Fri, 22 Jul 2022 17:56:41 +0800
+Subject: [PATCH 032/101] i386/tdx: Integrate tdx_caps->xfam_fixed0/1 into
+ tdx_cpuid_lookup
+
+KVMM requires userspace to pass XFAM configuration via CPUID leaves 0xDs.
+
+Convert tdx_caps->xfam_fixed0/1 into corresponding
+tdx_cpuid_lookup[].tdx_fixed0/1 field of CPUID leaves 0xD. Thus the
+requirement can applied naturally.
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ target/i386/cpu.c     |  3 ---
+ target/i386/cpu.h     |  3 +++
+ target/i386/kvm/tdx.c | 24 ++++++++++++++++++++++++
+ 3 files changed, 27 insertions(+), 3 deletions(-)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index f083ff4335..30205ca555 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -1420,9 +1420,6 @@ static const X86RegisterInfo32 x86_reg_info_32[CPU_NB_REGS32] = {
+ };
+ #undef REGISTER
+ 
+-/* CPUID feature bits available in XSS */
+-#define CPUID_XSTATE_XSS_MASK    (XSTATE_ARCH_LBR_MASK)
+-
+ ExtSaveArea x86_ext_save_areas[XSAVE_STATE_AREA_COUNT] = {
+     [XSTATE_FP_BIT] = {
+         /* x87 FP state component is always enabled if XSAVE is supported */
+diff --git a/target/i386/cpu.h b/target/i386/cpu.h
+index c21465ac15..ba6f3675c1 100644
+--- a/target/i386/cpu.h
++++ b/target/i386/cpu.h
+@@ -588,6 +588,9 @@ typedef enum X86Seg {
+                                  XSTATE_Hi16_ZMM_MASK | XSTATE_PKRU_MASK | \
+                                  XSTATE_XTILE_CFG_MASK | XSTATE_XTILE_DATA_MASK)
+ 
++/* CPUID feature bits available in XSS */
++#define CPUID_XSTATE_XSS_MASK    (XSTATE_ARCH_LBR_MASK)
++
+ /* CPUID feature words */
+ typedef enum FeatureWord {
+     FEAT_1_EDX,         /* CPUID[1].EDX */
+diff --git a/target/i386/kvm/tdx.c b/target/i386/kvm/tdx.c
+index 4518c79aec..19aed03f12 100644
+--- a/target/i386/kvm/tdx.c
++++ b/target/i386/kvm/tdx.c
+@@ -395,6 +395,30 @@ static void update_tdx_cpuid_lookup_by_tdx_caps(void)
+         entry->tdx_fixed0 &= ~config;
+         entry->tdx_fixed1 &= ~config;
+     }
++
++    /*
++     * Because KVM gets XFAM settings via CPUID leaves 0xD,  map
++     * tdx_caps->xfam_fixed{0, 1} into tdx_cpuid_lookup[].tdx_fixed{0, 1}.
++     *
++     * Then the enforment applies in tdx_get_configurable_cpuid() naturally.
++     */
++    tdx_cpuid_lookup[FEAT_XSAVE_XCR0_LO].tdx_fixed0 =
++            (uint32_t)~tdx_caps->xfam_fixed0 & CPUID_XSTATE_XCR0_MASK;
++    tdx_cpuid_lookup[FEAT_XSAVE_XCR0_LO].tdx_fixed1 =
++            (uint32_t)tdx_caps->xfam_fixed1 & CPUID_XSTATE_XCR0_MASK;
++    tdx_cpuid_lookup[FEAT_XSAVE_XCR0_HI].tdx_fixed0 =
++            (~tdx_caps->xfam_fixed0 & CPUID_XSTATE_XCR0_MASK) >> 32;
++    tdx_cpuid_lookup[FEAT_XSAVE_XCR0_HI].tdx_fixed1 =
++            (tdx_caps->xfam_fixed1 & CPUID_XSTATE_XCR0_MASK) >> 32;
++
++    tdx_cpuid_lookup[FEAT_XSAVE_XSS_LO].tdx_fixed0 =
++            (uint32_t)~tdx_caps->xfam_fixed0 & CPUID_XSTATE_XSS_MASK;
++    tdx_cpuid_lookup[FEAT_XSAVE_XSS_LO].tdx_fixed1 =
++            (uint32_t)tdx_caps->xfam_fixed1 & CPUID_XSTATE_XSS_MASK;
++    tdx_cpuid_lookup[FEAT_XSAVE_XSS_HI].tdx_fixed0 =
++            (~tdx_caps->xfam_fixed0 & CPUID_XSTATE_XSS_MASK) >> 32;
++    tdx_cpuid_lookup[FEAT_XSAVE_XSS_HI].tdx_fixed1 =
++            (tdx_caps->xfam_fixed1 & CPUID_XSTATE_XSS_MASK) >> 32;
+ }
+ 
+ int tdx_kvm_init(MachineState *ms, Error **errp)
+-- 
+2.39.2
+

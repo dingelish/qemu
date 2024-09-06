@@ -1,0 +1,41 @@
+From e8f29e1d8e5e02323b72c1144c0ba38796a26c38 Mon Sep 17 00:00:00 2001
+From: Xiaoyao Li <xiaoyao.li@intel.com>
+Date: Mon, 13 Dec 2021 10:01:48 +0800
+Subject: [PATCH 072/101] i386/tdx: Disable SMM for TDX VMs
+
+TDX doesn't support SMM and VMM cannot emulate SMM for TDX VMs because
+VMM cannot manipulate TDX VM's memory.
+
+Disable SMM for TDX VMs and error out if user requests to enable SMM.
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+Acked-by: Gerd Hoffmann <kraxel@redhat.com>
+---
+ target/i386/kvm/tdx.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/target/i386/kvm/tdx.c b/target/i386/kvm/tdx.c
+index 58036da1ee..992f2ad26d 100644
+--- a/target/i386/kvm/tdx.c
++++ b/target/i386/kvm/tdx.c
+@@ -678,9 +678,17 @@ static Notifier tdx_machine_done_notify = {
+ 
+ int tdx_kvm_init(MachineState *ms, Error **errp)
+ {
++    X86MachineState *x86ms = X86_MACHINE(ms);
+     TdxGuest *tdx = (TdxGuest *)object_dynamic_cast(OBJECT(ms->cgs),
+                                                     TYPE_TDX_GUEST);
+ 
++    if (x86ms->smm == ON_OFF_AUTO_AUTO) {
++        x86ms->smm = ON_OFF_AUTO_OFF;
++    } else if (x86ms->smm == ON_OFF_AUTO_ON) {
++        error_setg(errp, "TDX VM doesn't support SMM");
++        return -EINVAL;
++    }
++
+     if (!tdx_caps) {
+         get_tdx_capabilities();
+     }
+-- 
+2.39.2
+

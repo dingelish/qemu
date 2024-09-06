@@ -1,0 +1,49 @@
+From 13f355b553b75b3f2e8945f73db3c5ccff400591 Mon Sep 17 00:00:00 2001
+From: Sean Christopherson <sean.j.christopherson@intel.com>
+Date: Wed, 8 Apr 2020 13:58:48 -0700
+Subject: [PATCH 081/101] i386/tdx: Don't get/put guest state for TDX VMs
+
+Don't get/put state of TDX VMs since accessing/mutating guest state of
+production TDs is not supported.
+
+Note, it will be allowed for a debug TD. Corresponding support will be
+introduced when debug TD support is implemented in the future.
+
+Signed-off-by: Sean Christopherson <sean.j.christopherson@intel.com>
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ target/i386/kvm/kvm.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/target/i386/kvm/kvm.c b/target/i386/kvm/kvm.c
+index 1ca279a316..85a02a1e9d 100644
+--- a/target/i386/kvm/kvm.c
++++ b/target/i386/kvm/kvm.c
+@@ -4848,6 +4848,11 @@ int kvm_arch_put_registers(CPUState *cpu, int level)
+ 
+     assert(cpu_is_stopped(cpu) || qemu_cpu_is_self(cpu));
+ 
++    /* TODO: Allow accessing guest state for debug TDs. */
++    if (is_tdx_vm()) {
++        return 0;
++    }
++
+     /*
+      * Put MSR_IA32_FEATURE_CONTROL first, this ensures the VM gets out of VMX
+      * root operation upon vCPU reset. kvm_put_msr_feature_control() should also
+@@ -4958,6 +4963,12 @@ int kvm_arch_get_registers(CPUState *cs)
+     if (ret < 0) {
+         goto out;
+     }
++
++    /* TODO: Allow accessing guest state for debug TDs. */
++    if (is_tdx_vm()) {
++        return 0;
++    }
++
+     ret = kvm_getput_regs(cpu, 0);
+     if (ret < 0) {
+         goto out;
+-- 
+2.39.2
+

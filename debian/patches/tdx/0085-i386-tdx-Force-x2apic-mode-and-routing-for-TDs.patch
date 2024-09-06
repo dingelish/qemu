@@ -1,0 +1,89 @@
+From 50681c561c74777dc140a4cb78a216751bc73ad6 Mon Sep 17 00:00:00 2001
+From: Sean Christopherson <sean.j.christopherson@intel.com>
+Date: Tue, 11 Aug 2020 15:50:25 -0700
+Subject: [PATCH 085/101] i386/tdx: Force x2apic mode and routing for TDs
+
+TDX requires x2apic and "resets" vCPUs to have x2apic enabled.  Model
+this in QEMU and unconditionally enable x2apic interrupt routing.
+
+This fixes issues where interrupts from IRQFD would not get forwarded to
+the guest due to KVM silently dropping the invalid routing entry.
+
+Signed-off-by: Sean Christopherson <sean.j.christopherson@intel.com>
+---
+ hw/intc/apic_common.c           | 12 ++++++++++++
+ include/hw/i386/apic.h          |  1 +
+ include/hw/i386/apic_internal.h |  1 +
+ target/i386/kvm/tdx.c           |  2 ++
+ 4 files changed, 16 insertions(+)
+
+diff --git a/hw/intc/apic_common.c b/hw/intc/apic_common.c
+index 4a34f03047..3f9feb8f6b 100644
+--- a/hw/intc/apic_common.c
++++ b/hw/intc/apic_common.c
+@@ -236,6 +236,15 @@ void apic_designate_bsp(DeviceState *dev, bool bsp)
+     }
+ }
+ 
++void apic_force_x2apic(DeviceState *dev)
++{
++    if (dev == NULL) {
++        return;
++    }
++
++    APIC_COMMON(dev)->force_x2apic = true;
++}
++
+ static void apic_reset_common(DeviceState *dev)
+ {
+     APICCommonState *s = APIC_COMMON(dev);
+@@ -244,6 +253,9 @@ static void apic_reset_common(DeviceState *dev)
+ 
+     bsp = s->apicbase & MSR_IA32_APICBASE_BSP;
+     s->apicbase = APIC_DEFAULT_ADDRESS | bsp | MSR_IA32_APICBASE_ENABLE;
++    if (s->force_x2apic) {
++        s->apicbase |= MSR_IA32_APICBASE_EXTD;
++    }
+     s->id = s->initial_apic_id;
+ 
+     kvm_reset_irq_delivered();
+diff --git a/include/hw/i386/apic.h b/include/hw/i386/apic.h
+index bdc15a7a73..c3bc6d91b2 100644
+--- a/include/hw/i386/apic.h
++++ b/include/hw/i386/apic.h
+@@ -17,6 +17,7 @@ void apic_init_reset(DeviceState *s);
+ void apic_sipi(DeviceState *s);
+ void apic_poll_irq(DeviceState *d);
+ void apic_designate_bsp(DeviceState *d, bool bsp);
++void apic_force_x2apic(DeviceState *d);
+ int apic_get_highest_priority_irr(DeviceState *dev);
+ 
+ /* pc.c */
+diff --git a/include/hw/i386/apic_internal.h b/include/hw/i386/apic_internal.h
+index 5f2ba24bfc..80b5684e16 100644
+--- a/include/hw/i386/apic_internal.h
++++ b/include/hw/i386/apic_internal.h
+@@ -187,6 +187,7 @@ struct APICCommonState {
+     DeviceState *vapic;
+     hwaddr vapic_paddr; /* note: persistence via kvmvapic */
+     bool legacy_instance_id;
++    bool force_x2apic;
+ };
+ 
+ typedef struct VAPICState {
+diff --git a/target/i386/kvm/tdx.c b/target/i386/kvm/tdx.c
+index 949997bd57..50d171dd91 100644
+--- a/target/i386/kvm/tdx.c
++++ b/target/i386/kvm/tdx.c
+@@ -589,6 +589,8 @@ static void tdx_post_init_vcpus(void)
+ 
+     hob = tdx_get_hob_entry(tdx_guest);
+     CPU_FOREACH(cpu) {
++        apic_force_x2apic(X86_CPU(cpu)->apic_state);
++
+         r = tdx_vcpu_ioctl(cpu, KVM_TDX_INIT_VCPU, 0, (void *)hob->address);
+         if (r < 0) {
+             error_report("KVM_TDX_INIT_VCPU failed %s", strerror(-r));
+-- 
+2.39.2
+

@@ -1,0 +1,54 @@
+From 8b5cc1f33f74f18bd5480ef37024110096fd2568 Mon Sep 17 00:00:00 2001
+From: Isaku Yamahata <isaku.yamahata@intel.com>
+Date: Tue, 16 Aug 2022 11:12:37 -0700
+Subject: [PATCH 095/101] i386/tdx/trace: Add trace point for TDG.VP.VMCALL for
+ debug
+
+Signed-off-by: Isaku Yamahata <isaku.yamahata@intel.com>
+---
+ target/i386/kvm/tdx.c        | 3 +++
+ target/i386/kvm/trace-events | 3 +++
+ 2 files changed, 6 insertions(+)
+
+diff --git a/target/i386/kvm/tdx.c b/target/i386/kvm/tdx.c
+index b613342c53..eadaa6da10 100644
+--- a/target/i386/kvm/tdx.c
++++ b/target/i386/kvm/tdx.c
+@@ -1312,6 +1312,7 @@ static void tdx_handle_map_gpa(X86CPU *cpu, struct kvm_tdx_vmcall *vmcall)
+     hwaddr size = vmcall->in_r13;
+     int ret = 0;
+ 
++    trace_tdx_handle_map_gpa(gpa, size, private ? "private" : "shared");
+     vmcall->status_code = TDG_VP_VMCALL_INVALID_OPERAND;
+ 
+     if (!QEMU_IS_ALIGNED(gpa, 4096) || !QEMU_IS_ALIGNED(size, 4096)) {
+@@ -1619,6 +1620,7 @@ static void tdx_handle_get_quote(X86CPU *cpu, struct kvm_tdx_vmcall *vmcall)
+     QIOChannelSocket *ioc;
+     struct tdx_get_quote_task *t;
+ 
++    trace_tdx_handle_get_quote(gpa, buf_len);
+     vmcall->status_code = TDG_VP_VMCALL_INVALID_OPERAND;
+ 
+     /* GPA must be shared. */
+@@ -1764,6 +1766,7 @@ static void tdx_handle_setup_event_notify_interrupt(X86CPU *cpu,
+     TdxGuest *tdx = TDX_GUEST(ms->cgs);
+     int event_notify_interrupt = vmcall->in_r12;
+ 
++    trace_tdx_handle_setup_event_notify_interrupt(event_notify_interrupt);
+     if (32 <= event_notify_interrupt && event_notify_interrupt <= 255) {
+         qemu_mutex_lock(&tdx->lock);
+         tdx->event_notify_interrupt = event_notify_interrupt;
+diff --git a/target/i386/kvm/trace-events b/target/i386/kvm/trace-events
+index 8714618312..ba1448c3bb 100644
+--- a/target/i386/kvm/trace-events
++++ b/target/i386/kvm/trace-events
+@@ -15,3 +15,6 @@ kvm_xen_set_vcpu_callback(int cpu, int vector) "callback vcpu %d vector %d"
+ 
+ # tdx.c
+ kvm_tdx_init_mem_region(uint32_t type, uint32_t attributes, uint64_t source_addr, uint64_t gpa, uint32_t nr_pages) "type=0x%x attributes=0x%x source=0x%"PRIx64 " gpa=0x%"PRIx64 " nr_pages=0x%"PRIx32
++tdx_handle_map_gpa(uint64_t gpa, uint64_t size, const char *private) "gpa 0x%"PRIx64" size 0x%"PRIx64" %s"
++tdx_handle_get_quote(uint64_t gpa, uint64_t len) "gpa 0x%"PRIx64" len 0x%"PRIx64
++tdx_handle_setup_event_notify_interrupt(int event_notify_interrupt) "interrupt %d"
+-- 
+2.39.2
+

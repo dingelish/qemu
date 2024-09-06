@@ -1,0 +1,85 @@
+From 4a36ea507d48197da354d0dcabb4192ef8893a1b Mon Sep 17 00:00:00 2001
+From: Xiaoyao Li <xiaoyao.li@intel.com>
+Date: Wed, 7 Jun 2023 02:00:38 -0400
+Subject: [PATCH 046/101] i386/tdx: Make memory type private by default
+
+By default (due to the recent UPM change), restricted memory attribute is
+shared.  Convert the memory region from shared to private at the memory
+slot creation time.
+
+add kvm region registering function to check the flag
+and convert the region, and add memory listener to TDX guest code to set
+the flag to the possible memory region.
+
+Without this patch
+- Secure-EPT violation on private area
+- KVM_MEMORY_FAULT EXIT (kvm -> qemu)
+- qemu converts the 4K page from shared to private
+- Resume VCPU execution
+- Secure-EPT violation again
+- KVM resolves EPT Violation
+This also prevents huge page because page conversion is done at 4K
+granularity.  Although it's possible to merge 4K private mapping into
+2M large page, it slows guest boot.
+
+With this patch
+- After memory slot creation, convert the region from private to shared
+- Secure-EPT violation on private area.
+- KVM resolves EPT Violation
+
+Originated-from: Isaku Yamahata <isaku.yamahata@intel.com>
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ target/i386/kvm/tdx.c | 22 ++++++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+
+diff --git a/target/i386/kvm/tdx.c b/target/i386/kvm/tdx.c
+index 8bab03a2a5..5af1ea2e07 100644
+--- a/target/i386/kvm/tdx.c
++++ b/target/i386/kvm/tdx.c
+@@ -18,6 +18,7 @@
+ #include "standard-headers/asm-x86/kvm_para.h"
+ #include "sysemu/kvm.h"
+ #include "sysemu/sysemu.h"
++#include "exec/address-spaces.h"
+ 
+ #include "hw/i386/x86.h"
+ #include "kvm_i386.h"
+@@ -578,6 +579,21 @@ out:
+     return r;
+ }
+ 
++static void tdx_guest_region_add(MemoryListener *listener,
++                                 MemoryRegionSection *section)
++{
++    if (memory_region_can_be_private(section->mr)) {
++        memory_region_set_default_private(section->mr);
++    }
++}
++
++static MemoryListener tdx_memory_listener = {
++    .name = TYPE_TDX_GUEST,
++    .region_add = tdx_guest_region_add,
++    /* Higher than KVM memory listener = 10. */
++    .priority = 20,
++};
++
+ static bool tdx_guest_get_sept_ve_disable(Object *obj, Error **errp)
+ {
+     TdxGuest *tdx = TDX_GUEST(obj);
+@@ -607,6 +623,12 @@ OBJECT_DEFINE_TYPE_WITH_INTERFACES(TdxGuest,
+ static void tdx_guest_init(Object *obj)
+ {
+     TdxGuest *tdx = TDX_GUEST(obj);
++    static bool memory_listener_registered = false;
++
++    if (!memory_listener_registered) {
++        memory_listener_register(&tdx_memory_listener, &address_space_memory);
++        memory_listener_registered = true;
++    }
+ 
+     qemu_mutex_init(&tdx->lock);
+ 
+-- 
+2.39.2
+

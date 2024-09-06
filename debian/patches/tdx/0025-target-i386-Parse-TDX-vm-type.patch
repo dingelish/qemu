@@ -1,0 +1,63 @@
+From 93fd644a3dee044288ba74d7fd7ee2061c830580 Mon Sep 17 00:00:00 2001
+From: Xiaoyao Li <xiaoyao.li@intel.com>
+Date: Tue, 7 Dec 2021 17:04:53 +0800
+Subject: [PATCH 025/101] target/i386: Parse TDX vm type
+
+TDX VM requires VM type KVM_X86_TDX_VM to be passed to
+kvm_ioctl(KVM_CREATE_VM).
+
+If tdx-guest object is specified to confidential-guest-support, like,
+
+  qemu -machine ...,confidential-guest-support=tdx0 \
+       -object tdx-guest,id=tdx0,...
+
+it parses VM type as KVM_X86_TDX_VM.
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ target/i386/kvm/kvm.c | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/target/i386/kvm/kvm.c b/target/i386/kvm/kvm.c
+index 1a9f501e30..1d4cfe0e52 100644
+--- a/target/i386/kvm/kvm.c
++++ b/target/i386/kvm/kvm.c
+@@ -32,6 +32,7 @@
+ #include "sysemu/runstate.h"
+ #include "kvm_i386.h"
+ #include "sev.h"
++#include "tdx.h"
+ #include "xen-emu.h"
+ #include "hyperv.h"
+ #include "hyperv-proto.h"
+@@ -158,6 +159,7 @@ static int kvm_get_one_msr(X86CPU *cpu, int index, uint64_t *value);
+ static const char* vm_type_name[] = {
+     [KVM_X86_DEFAULT_VM] = "default",
+     [KVM_X86_SW_PROTECTED_VM] = "sw-protected-vm",
++    [KVM_X86_TDX_VM] = "tdx",
+ };
+ 
+ int kvm_get_vm_type(MachineState *ms, const char *vm_type)
+@@ -170,12 +172,18 @@ int kvm_get_vm_type(MachineState *ms, const char *vm_type)
+             kvm_type = KVM_X86_DEFAULT_VM;
+         } else if (!g_ascii_strcasecmp(vm_type, "sw-protected-vm")) {
+             kvm_type = KVM_X86_SW_PROTECTED_VM;
+-        } else {
++        } else if (!g_ascii_strcasecmp(vm_type, "tdx")) {
++            kvm_type = KVM_X86_TDX_VM;
++        }else {
+             error_report("Unknown kvm-type specified '%s'", vm_type);
+             exit(1);
+         }
+     }
+ 
++    if (ms->cgs && object_dynamic_cast(OBJECT(ms->cgs), TYPE_TDX_GUEST)) {
++        kvm_type = KVM_X86_TDX_VM;
++    }
++
+     /*
+      * old KVM doesn't support KVM_CAP_VM_TYPES and KVM_X86_DEFAULT_VM
+      * is always supported
+-- 
+2.39.2
+

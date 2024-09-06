@@ -1,0 +1,73 @@
+From 62f1f33cc6a310db47ae0241e14e9dae29653dc0 Mon Sep 17 00:00:00 2001
+From: Zhu Lingshan <lingshan.zhu@intel.com>
+Date: Thu, 24 Aug 2023 22:16:52 +0800
+Subject: [PATCH 026/101] target/i386: Introduce kvm_confidential_guest_init()
+
+Introduce a separate function kvm_confidential_guest_init() for SEV (and
+future TDX).
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+Acked-by: Gerd Hoffmann <kraxel@redhat.com>
+---
+ target/i386/kvm/kvm.c | 11 ++++++++++-
+ target/i386/sev.c     |  1 -
+ target/i386/sev.h     |  2 ++
+ 3 files changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/target/i386/kvm/kvm.c b/target/i386/kvm/kvm.c
+index 1d4cfe0e52..8f1b192fbc 100644
+--- a/target/i386/kvm/kvm.c
++++ b/target/i386/kvm/kvm.c
+@@ -2629,6 +2629,15 @@ static MemoryListener kvm_x86_sw_protected_vm_memory_listener = {
+     .priority = 20,
+ };
+ 
++static int kvm_confidential_guest_init(MachineState *ms, Error **errp)
++{
++    if (object_dynamic_cast(OBJECT(ms->cgs), TYPE_SEV_GUEST)) {
++        return sev_kvm_init(ms->cgs, errp);
++    }
++
++    return 0;
++}
++
+ int kvm_arch_init(MachineState *ms, KVMState *s)
+ {
+     X86MachineState *x86ms = X86_MACHINE(ms);
+@@ -2650,7 +2659,7 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
+      * mechanisms are supported in future (e.g. TDX), they'll need
+      * their own initialization either here or elsewhere.
+      */
+-    ret = sev_kvm_init(ms->cgs, &local_err);
++    ret = kvm_confidential_guest_init(ms, &local_err);
+     if (ret < 0) {
+         error_report_err(local_err);
+         return ret;
+diff --git a/target/i386/sev.c b/target/i386/sev.c
+index 859e06f6ad..70ee0d5ac1 100644
+--- a/target/i386/sev.c
++++ b/target/i386/sev.c
+@@ -39,7 +39,6 @@
+ #include "hw/i386/pc.h"
+ #include "exec/address-spaces.h"
+ 
+-#define TYPE_SEV_GUEST "sev-guest"
+ OBJECT_DECLARE_SIMPLE_TYPE(SevGuestState, SEV_GUEST)
+ 
+ 
+diff --git a/target/i386/sev.h b/target/i386/sev.h
+index 7b1528248a..64fbf186db 100644
+--- a/target/i386/sev.h
++++ b/target/i386/sev.h
+@@ -20,6 +20,8 @@
+ 
+ #include "exec/confidential-guest-support.h"
+ 
++#define TYPE_SEV_GUEST "sev-guest"
++
+ #define SEV_POLICY_NODBG        0x1
+ #define SEV_POLICY_NOKS         0x2
+ #define SEV_POLICY_ES           0x4
+-- 
+2.39.2
+

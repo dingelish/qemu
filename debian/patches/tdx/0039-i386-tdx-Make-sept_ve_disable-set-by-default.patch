@@ -1,0 +1,30 @@
+From 5d4940086370c9602c25f50eb526bde67cffe577 Mon Sep 17 00:00:00 2001
+From: Isaku Yamahata <isaku.yamahata@intel.com>
+Date: Mon, 31 Oct 2022 11:25:01 -0700
+Subject: [PATCH 039/101] i386/tdx: Make sept_ve_disable set by default
+
+For TDX KVM use case, Linux guest is the most major one.  It requires
+sept_ve_disable set.  Make it default for the main use case.  For other use
+case, it can be enabled/disabled via qemu command line.
+
+Signed-off-by: Isaku Yamahata <isaku.yamahata@intel.com>
+---
+ target/i386/kvm/tdx.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/target/i386/kvm/tdx.c b/target/i386/kvm/tdx.c
+index e2dbd2e520..cbb3940fbf 100644
+--- a/target/i386/kvm/tdx.c
++++ b/target/i386/kvm/tdx.c
+@@ -534,7 +534,7 @@ static void tdx_guest_init(Object *obj)
+ 
+     qemu_mutex_init(&tdx->lock);
+ 
+-    tdx->attributes = 0;
++    tdx->attributes = TDX_TD_ATTRIBUTES_SEPT_VE_DISABLE;
+ 
+     object_property_add_bool(obj, "sept-ve-disable",
+                              tdx_guest_get_sept_ve_disable,
+-- 
+2.39.2
+

@@ -1,0 +1,46 @@
+From b6c13309db0ae4f88d185901dc2e466b9b13f6b7 Mon Sep 17 00:00:00 2001
+From: Xiaoyao Li <xiaoyao.li@intel.com>
+Date: Tue, 16 Aug 2022 11:12:35 -0700
+Subject: [PATCH 094/101] i386/trace: Add trace for kvm_tdx_init_mem_region()
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ target/i386/kvm/tdx.c        | 3 +++
+ target/i386/kvm/trace-events | 3 +++
+ 2 files changed, 6 insertions(+)
+
+diff --git a/target/i386/kvm/tdx.c b/target/i386/kvm/tdx.c
+index 5c445cc57b..b613342c53 100644
+--- a/target/i386/kvm/tdx.c
++++ b/target/i386/kvm/tdx.c
+@@ -33,6 +33,8 @@
+ #include "tdx.h"
+ #include "../cpu-internal.h"
+ 
++#include "trace.h"
++
+ #define TDX_SUPPORTED_KVM_FEATURES  ((1U << KVM_FEATURE_NOP_IO_DELAY) | \
+                                      (1U << KVM_FEATURE_PV_UNHALT) | \
+                                      (1U << KVM_FEATURE_PV_TLB_FLUSH) | \
+@@ -911,6 +913,7 @@ static void tdx_finalize_vm(Notifier *notifier, void *unused)
+         __u32 flags = entry->attributes & TDVF_SECTION_ATTRIBUTES_MR_EXTEND ?
+                       KVM_TDX_MEASURE_MEMORY_REGION : 0;
+ 
++        trace_kvm_tdx_init_mem_region(entry->type, entry->attributes, mem_region.source_addr, mem_region.gpa, mem_region.nr_pages);
+         r = tdx_vm_ioctl(KVM_TDX_INIT_MEM_REGION, flags, &mem_region);
+         if (r < 0) {
+              error_report("KVM_TDX_INIT_MEM_REGION failed %s", strerror(-r));
+diff --git a/target/i386/kvm/trace-events b/target/i386/kvm/trace-events
+index b365a8e8e2..8714618312 100644
+--- a/target/i386/kvm/trace-events
++++ b/target/i386/kvm/trace-events
+@@ -12,3 +12,6 @@ kvm_xen_soft_reset(void) ""
+ kvm_xen_set_shared_info(uint64_t gfn) "shared info at gfn 0x%" PRIx64
+ kvm_xen_set_vcpu_attr(int cpu, int type, uint64_t gpa) "vcpu attr cpu %d type %d gpa 0x%" PRIx64
+ kvm_xen_set_vcpu_callback(int cpu, int vector) "callback vcpu %d vector %d"
++
++# tdx.c
++kvm_tdx_init_mem_region(uint32_t type, uint32_t attributes, uint64_t source_addr, uint64_t gpa, uint32_t nr_pages) "type=0x%x attributes=0x%x source=0x%"PRIx64 " gpa=0x%"PRIx64 " nr_pages=0x%"PRIx32
+-- 
+2.39.2
+

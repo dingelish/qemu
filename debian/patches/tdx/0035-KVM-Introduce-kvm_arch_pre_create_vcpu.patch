@@ -1,0 +1,61 @@
+From 1676e0b446ce6a9ae898ec2f817e02232feee3db Mon Sep 17 00:00:00 2001
+From: Xiaoyao Li <xiaoyao.li@intel.com>
+Date: Wed, 8 Dec 2021 15:20:06 +0800
+Subject: [PATCH 035/101] KVM: Introduce kvm_arch_pre_create_vcpu()
+
+Introduce kvm_arch_pre_create_vcpu(), to perform arch-dependent
+work prior to create any vcpu. This is for i386 TDX because it needs
+call TDX_INIT_VM before creating any vcpu.
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+Acked-by: Gerd Hoffmann <kraxel@redhat.com>
+---
+ accel/kvm/kvm-all.c  | 12 ++++++++++++
+ include/sysemu/kvm.h |  1 +
+ 2 files changed, 13 insertions(+)
+
+diff --git a/accel/kvm/kvm-all.c b/accel/kvm/kvm-all.c
+index 145cb59f65..da73950936 100644
+--- a/accel/kvm/kvm-all.c
++++ b/accel/kvm/kvm-all.c
+@@ -422,6 +422,11 @@ static int kvm_get_vcpu(KVMState *s, unsigned long vcpu_id)
+     return kvm_vm_ioctl(s, KVM_CREATE_VCPU, (void *)vcpu_id);
+ }
+ 
++int __attribute__ ((weak)) kvm_arch_pre_create_vcpu(CPUState *cpu)
++{
++    return 0;
++}
++
+ int kvm_init_vcpu(CPUState *cpu, Error **errp)
+ {
+     KVMState *s = kvm_state;
+@@ -430,6 +435,13 @@ int kvm_init_vcpu(CPUState *cpu, Error **errp)
+ 
+     trace_kvm_init_vcpu(cpu->cpu_index, kvm_arch_vcpu_id(cpu));
+ 
++    ret = kvm_arch_pre_create_vcpu(cpu);
++    if (ret < 0) {
++        error_setg_errno(errp, -ret,
++                         "kvm_init_vcpu: kvm_arch_pre_create_vcpu() failed");
++        goto err;
++    }
++
+     ret = kvm_get_vcpu(s, kvm_arch_vcpu_id(cpu));
+     if (ret < 0) {
+         error_setg_errno(errp, -ret, "kvm_init_vcpu: kvm_get_vcpu failed (%lu)",
+diff --git a/include/sysemu/kvm.h b/include/sysemu/kvm.h
+index a356d7d2f4..35b4b18383 100644
+--- a/include/sysemu/kvm.h
++++ b/include/sysemu/kvm.h
+@@ -371,6 +371,7 @@ int kvm_arch_put_registers(CPUState *cpu, int level);
+ 
+ int kvm_arch_init(MachineState *ms, KVMState *s);
+ 
++int kvm_arch_pre_create_vcpu(CPUState *cpu);
+ int kvm_arch_init_vcpu(CPUState *cpu);
+ int kvm_arch_destroy_vcpu(CPUState *cpu);
+ 
+-- 
+2.39.2
+

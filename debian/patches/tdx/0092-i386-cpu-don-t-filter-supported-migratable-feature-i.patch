@@ -1,0 +1,36 @@
+From 7a9a80b133c21f1186970922957c6508089ba988 Mon Sep 17 00:00:00 2001
+From: Zhu Lingshan <lingshan.zhu@intel.com>
+Date: Fri, 25 Aug 2023 01:00:17 +0800
+Subject: [PATCH 092/101] i386/cpu: don't filter supported migratable feature
+ if TDX VM
+
+Some native CPUID features would be mask off as they don't have a feature
+name in feature_word_info. To avoid the misalignment with the native
+value seen in TD guest, avoid do migratbale feature filter in TDX VM
+case.
+
+Signed-off-by: Chenyi Qiang <chenyi.qiang@intel.com>
+---
+ target/i386/cpu.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index de6de7cf35..60e369d771 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -5073,6 +5073,12 @@ uint64_t x86_cpu_get_supported_feature_word(FeatureWord w,
+     if (w == FEAT_8000_0001_EDX) {
+         r &= ~CPUID_EXT2_LM;
+     }
++#endif
++#ifndef CONFIG_USER_ONLY
++    /* skip migratable flag trim in TD VM case */
++    if (is_tdx_vm() && wi->type == CPUID_FEATURE_WORD) {
++        return r;
++    }
+ #endif
+     if (migratable_only) {
+         r &= x86_cpu_get_migratable_flags(w);
+-- 
+2.39.2
+

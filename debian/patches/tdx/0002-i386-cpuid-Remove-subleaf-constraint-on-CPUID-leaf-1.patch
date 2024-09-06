@@ -1,0 +1,31 @@
+From e31da7b53b42817e3902e2136a29ee7565b17b29 Mon Sep 17 00:00:00 2001
+From: Xiaoyao Li <xiaoyao.li@intel.com>
+Date: Mon, 11 Jul 2022 16:31:55 +0800
+Subject: [PATCH 002/101] i386/cpuid: Remove subleaf constraint on CPUID leaf
+ 1F
+
+No such constraint that subleaf index needs to be less than 64.
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ target/i386/kvm/kvm.c | 4 ----
+ 1 file changed, 4 deletions(-)
+
+diff --git a/target/i386/kvm/kvm.c b/target/i386/kvm/kvm.c
+index afa97799d8..d7e235ce35 100644
+--- a/target/i386/kvm/kvm.c
++++ b/target/i386/kvm/kvm.c
+@@ -1968,10 +1968,6 @@ int kvm_arch_init_vcpu(CPUState *cs)
+                     break;
+                 }
+ 
+-                if (i == 0x1f && j == 64) {
+-                    break;
+-                }
+-
+                 c->function = i;
+                 c->flags = KVM_CPUID_FLAG_SIGNIFCANT_INDEX;
+                 c->index = j;
+-- 
+2.39.2
+

@@ -1,0 +1,31 @@
+From 474d103301ced12073e552c062566a2ae366e14d Mon Sep 17 00:00:00 2001
+From: Xiaoyao Li <xiaoyao.li@intel.com>
+Date: Fri, 21 Jul 2023 04:15:08 -0400
+Subject: [PATCH 022/101] i386: Disable SMM mode for X86_SW_PROTECTED_VM
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ target/i386/kvm/kvm.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/target/i386/kvm/kvm.c b/target/i386/kvm/kvm.c
+index 8b1e718305..1a9f501e30 100644
+--- a/target/i386/kvm/kvm.c
++++ b/target/i386/kvm/kvm.c
+@@ -2650,6 +2650,13 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
+ 
+     if (x86ms->vm_type == KVM_X86_SW_PROTECTED_VM) {
+         memory_listener_register(&kvm_x86_sw_protected_vm_memory_listener, &address_space_memory);
++
++        if (x86ms->smm == ON_OFF_AUTO_AUTO) {
++            x86ms->smm = ON_OFF_AUTO_OFF;
++        } else if (x86ms->smm == ON_OFF_AUTO_ON) {
++            error_report("X86_SW_PROTECTED_VM doesn't support SMM");
++            return -EINVAL;
++        }
+     }
+ 
+     if (!kvm_check_extension(s, KVM_CAP_IRQ_ROUTING)) {
+-- 
+2.39.2
+

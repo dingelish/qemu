@@ -1,0 +1,49 @@
+From 6265a255a7ffbced5babc56a514fa7c47532f0d4 Mon Sep 17 00:00:00 2001
+From: Isaku Yamahata <isaku.yamahata@intel.com>
+Date: Fri, 17 Mar 2023 00:30:18 -0700
+Subject: [PATCH 068/101] KVM: TDX: Ignore memory conversion to shared of
+ unassigned region
+
+TDX requires vMMIO region to be shared.  For KVM, MMIO region is the region
+which kvm memslot isn't assigned to (except in-kernel emulation).
+qemu has the memory region for vMMIO at each device level.
+
+While OVMF issues MapGPA(to-shared) conservatively on 32bit PCI MMIO
+region, qemu doesn't find corresponding vMMIO region because it's before
+PCI device allocation and memory_region_find() finds the device region, not
+PCI bus region.  It's safe to ignore MapGPA(to-shared) because when guest
+accesses those region they use GPA with shared bit set for vMMIO.  Ignore
+memory conversion request of non-assigned region to shared and return
+success.  Otherwise OVMF is confused and panics there.
+
+Signed-off-by: Isaku Yamahata <isaku.yamahata@intel.com>
+---
+ accel/kvm/kvm-all.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/accel/kvm/kvm-all.c b/accel/kvm/kvm-all.c
+index 2e1bd0f0d1..05f19918b8 100644
+--- a/accel/kvm/kvm-all.c
++++ b/accel/kvm/kvm-all.c
+@@ -3020,6 +3020,18 @@ int kvm_convert_memory(hwaddr start, hwaddr size, bool to_private)
+     trace_kvm_convert_memory(start, size, to_private ? "shared_to_private" : "private_to_shared");
+     section = memory_region_find(get_system_memory(), start, size);
+     if (!section.mr) {
++        /*
++         * Ignore converting non-assigned region to shared.
++         *
++         * TDX requires vMMIO region to be shared to inject #VE to guest.
++         * OVMF issues conservatively MapGPA(shared) on 32bit PCI MMIO region,
++         * and vIO-APIC 0xFEC00000 4K page.
++         * OVMF assigns 32bit PCI MMIO region to
++         * [top of low memory: typically 2GB=0xC000000,  0xFC00000)
++         */
++        if (!to_private) {
++            ret = 0;
++        }
+         return ret;
+     }
+ 
+-- 
+2.39.2
+

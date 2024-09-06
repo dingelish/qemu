@@ -1,0 +1,41 @@
+From 06fb673f2bf11661f542aec2b6aa4fbae9b02b78 Mon Sep 17 00:00:00 2001
+From: Isaku Yamahata <isaku.yamahata@intel.com>
+Date: Tue, 16 Aug 2022 11:12:38 -0700
+Subject: [PATCH 096/101] fw_cfg/trace: add trace point for
+ fw_cfg_dma_transfer() for debug
+
+Signed-off-by: Isaku Yamahata <isaku.yamahata@intel.com>
+---
+ hw/nvram/fw_cfg.c     | 3 ++-
+ hw/nvram/trace-events | 1 +
+ 2 files changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/hw/nvram/fw_cfg.c b/hw/nvram/fw_cfg.c
+index 29a5bef1d5..d0520ed8f0 100644
+--- a/hw/nvram/fw_cfg.c
++++ b/hw/nvram/fw_cfg.c
+@@ -375,7 +375,8 @@ static void fw_cfg_dma_transfer(FWCfgState *s)
+     } else {
+         dma.length = 0;
+     }
+-
++    trace_fw_cfg_transfer(dma.address, dma.length, arch,
++                          (s->cur_entry & FW_CFG_ENTRY_MASK), read, write);
+     dma.control = 0;
+ 
+     while (dma.length > 0 && !(dma.control & FW_CFG_DMA_CTL_ERROR)) {
+diff --git a/hw/nvram/trace-events b/hw/nvram/trace-events
+index 5e33b24d47..bdcb224503 100644
+--- a/hw/nvram/trace-events
++++ b/hw/nvram/trace-events
+@@ -13,6 +13,7 @@ fw_cfg_add_string(uint16_t key_value, const char *key_name, const char *value) "
+ fw_cfg_add_i16(uint16_t key_value, const char *key_name, uint16_t value) "key 0x%04" PRIx16 " '%s', value 0x%" PRIx16
+ fw_cfg_add_i32(uint16_t key_value, const char *key_name, uint32_t value) "key 0x%04" PRIx16 " '%s', value 0x%" PRIx32
+ fw_cfg_add_i64(uint16_t key_value, const char *key_name, uint64_t value) "key 0x%04" PRIx16 " '%s', value 0x%" PRIx64
++fw_cfg_transfer(uint64_t dma_addr, uint64_t length, int arch, uint64_t entry, int read, int write) "dma 0x%" PRIx64 " length 0x%" PRIx64 " arch %d entry 0x%" PRIx64 " read %d write %d"
+ 
+ # mac_nvram.c
+ macio_nvram_read(uint32_t addr, uint8_t val) "read addr=0x%04"PRIx32" val=0x%02x"
+-- 
+2.39.2
+

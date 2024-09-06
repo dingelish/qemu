@@ -1,0 +1,162 @@
+From e8f19381f7ee58ecfdbd89190a39e972a35556a6 Mon Sep 17 00:00:00 2001
+From: Xiaoyao Li <xiaoyao.li@intel.com>
+Date: Mon, 28 Nov 2022 15:38:26 +0800
+Subject: [PATCH 061/101] i386/tdx: handle
+ TDG.VP.VMCALL<SetupEventNotifyInterrupt>
+
+For SetupEventNotifyInterrupt, record interrupt vector and the apic id
+of the vcpu that received this TDVMCALL.
+
+Later it can inject interrupt with given vector to the specific vcpu
+that received SetupEventNotifyInterrupt.
+
+Signed-off-by: Isaku Yamahata <isaku.yamahata@intel.com>
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ target/i386/kvm/kvm.c      |  9 ++++++
+ target/i386/kvm/tdx-stub.c |  4 +++
+ target/i386/kvm/tdx.c      | 61 ++++++++++++++++++++++++++++++++++++++
+ target/i386/kvm/tdx.h      |  6 ++++
+ 4 files changed, 80 insertions(+)
+
+diff --git a/target/i386/kvm/kvm.c b/target/i386/kvm/kvm.c
+index 4a83d4e192..576b38d5dd 100644
+--- a/target/i386/kvm/kvm.c
++++ b/target/i386/kvm/kvm.c
+@@ -5653,6 +5653,15 @@ int kvm_arch_handle_exit(CPUState *cs, struct kvm_run *run)
+         ret = kvm_xen_handle_exit(cpu, &run->xen);
+         break;
+ #endif
++    case KVM_EXIT_TDX:
++        if (!is_tdx_vm()) {
++            error_report("KVM: get KVM_EXIT_TDX for a non-TDX VM.");
++            ret = -1;
++            break;
++        }
++        tdx_handle_exit(cpu, &run->tdx);
++        ret = 0;
++        break;
+     default:
+         fprintf(stderr, "KVM: unknown exit reason %d\n", run->exit_reason);
+         ret = -1;
+diff --git a/target/i386/kvm/tdx-stub.c b/target/i386/kvm/tdx-stub.c
+index 3cd114476d..e26e2111f6 100644
+--- a/target/i386/kvm/tdx-stub.c
++++ b/target/i386/kvm/tdx-stub.c
+@@ -16,3 +16,7 @@ int tdx_parse_tdvf(void *flash_ptr, int size)
+ {
+     return -EINVAL;
+ }
++
++void tdx_handle_exit(X86CPU *cpu, struct kvm_tdx_exit *tdx_exit)
++{
++}
+diff --git a/target/i386/kvm/tdx.c b/target/i386/kvm/tdx.c
+index 002a5e8a7c..635fa6f6f2 100644
+--- a/target/i386/kvm/tdx.c
++++ b/target/i386/kvm/tdx.c
+@@ -894,6 +894,9 @@ static void tdx_guest_init(Object *obj)
+                                OBJ_PROP_FLAG_READWRITE);
+     object_property_add_sha384(obj, "mrownerconfig", tdx->mrownerconfig,
+                                OBJ_PROP_FLAG_READWRITE);
++
++    tdx->event_notify_interrupt = -1;
++    tdx->event_notify_apic_id = -1;
+ }
+ 
+ static void tdx_guest_finalize(Object *obj)
+@@ -903,3 +906,61 @@ static void tdx_guest_finalize(Object *obj)
+ static void tdx_guest_class_init(ObjectClass *oc, void *data)
+ {
+ }
++
++#define TDG_VP_VMCALL_SETUP_EVENT_NOTIFY_INTERRUPT      0x10004ULL
++
++#define TDG_VP_VMCALL_SUCCESS           0x0000000000000000ULL
++#define TDG_VP_VMCALL_RETRY             0x0000000000000001ULL
++#define TDG_VP_VMCALL_INVALID_OPERAND   0x8000000000000000ULL
++#define TDG_VP_VMCALL_GPA_INUSE         0x8000000000000001ULL
++#define TDG_VP_VMCALL_ALIGN_ERROR       0x8000000000000002ULL
++
++static void tdx_handle_setup_event_notify_interrupt(X86CPU *cpu,
++                                                    struct kvm_tdx_vmcall *vmcall)
++{
++    MachineState *ms = MACHINE(qdev_get_machine());
++    TdxGuest *tdx = TDX_GUEST(ms->cgs);
++    int event_notify_interrupt = vmcall->in_r12;
++
++    if (32 <= event_notify_interrupt && event_notify_interrupt <= 255) {
++        qemu_mutex_lock(&tdx->lock);
++        tdx->event_notify_interrupt = event_notify_interrupt;
++        tdx->event_notify_apic_id = cpu->apic_id;
++        qemu_mutex_unlock(&tdx->lock);
++        vmcall->status_code = TDG_VP_VMCALL_SUCCESS;
++    }
++}
++
++static void tdx_handle_vmcall(X86CPU *cpu, struct kvm_tdx_vmcall *vmcall)
++{
++    vmcall->status_code = TDG_VP_VMCALL_INVALID_OPERAND;
++
++    /* For now handle only TDG.VP.VMCALL. */
++    if (vmcall->type != 0) {
++        warn_report("unknown tdg.vp.vmcall type 0x%llx subfunction 0x%llx",
++                    vmcall->type, vmcall->subfunction);
++        return;
++    }
++
++    switch (vmcall->subfunction) {
++    case TDG_VP_VMCALL_SETUP_EVENT_NOTIFY_INTERRUPT:
++        tdx_handle_setup_event_notify_interrupt(cpu, vmcall);
++        break;
++    default:
++        warn_report("unknown tdg.vp.vmcall type 0x%llx subfunction 0x%llx",
++                    vmcall->type, vmcall->subfunction);
++        break;
++    }
++}
++
++void tdx_handle_exit(X86CPU *cpu, struct kvm_tdx_exit *tdx_exit)
++{
++    switch (tdx_exit->type) {
++    case KVM_EXIT_TDX_VMCALL:
++        tdx_handle_vmcall(cpu, &tdx_exit->u.vmcall);
++        break;
++    default:
++        warn_report("unknown tdx exit type 0x%x", tdx_exit->type);
++        break;
++    }
++}
+diff --git a/target/i386/kvm/tdx.h b/target/i386/kvm/tdx.h
+index 1c444b6cdb..50a151fc79 100644
+--- a/target/i386/kvm/tdx.h
++++ b/target/i386/kvm/tdx.h
+@@ -7,6 +7,7 @@
+ 
+ #include "exec/confidential-guest-support.h"
+ #include "hw/i386/tdvf.h"
++#include "sysemu/kvm.h"
+ 
+ #define TYPE_TDX_GUEST "tdx-guest"
+ #define TDX_GUEST(obj)  OBJECT_CHECK(TdxGuest, (obj), TYPE_TDX_GUEST)
+@@ -42,6 +43,10 @@ typedef struct TdxGuest {
+ 
+     uint32_t nr_ram_entries;
+     TdxRamEntry *ram_entries;
++
++    /* runtime state */
++    int event_notify_interrupt;
++    uint32_t event_notify_apic_id;
+ } TdxGuest;
+ 
+ #ifdef CONFIG_TDX
+@@ -56,5 +61,6 @@ void tdx_get_supported_cpuid(uint32_t function, uint32_t index, int reg,
+ int tdx_pre_create_vcpu(CPUState *cpu);
+ void tdx_set_tdvf_region(MemoryRegion *tdvf_region);
+ int tdx_parse_tdvf(void *flash_ptr, int size);
++void tdx_handle_exit(X86CPU *cpu, struct kvm_tdx_exit *tdx_exit);
+ 
+ #endif /* QEMU_I386_TDX_H */
+-- 
+2.39.2
+

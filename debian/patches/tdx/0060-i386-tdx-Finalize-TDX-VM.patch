@@ -1,0 +1,35 @@
+From 7cfd25a1bff5671825a4c659be240298f19cc8fb Mon Sep 17 00:00:00 2001
+From: Xiaoyao Li <xiaoyao.li@intel.com>
+Date: Tue, 14 Dec 2021 10:36:11 +0800
+Subject: [PATCH 060/101] i386/tdx: Finalize TDX VM
+
+Invoke KVM_TDX_FINALIZE_VM to finalize the TD's measurement and make
+the TD vCPUs runnable once machine initialization is complete.
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+Acked-by: Gerd Hoffmann <kraxel@redhat.com>
+---
+ target/i386/kvm/tdx.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/target/i386/kvm/tdx.c b/target/i386/kvm/tdx.c
+index 48e1856ca9..002a5e8a7c 100644
+--- a/target/i386/kvm/tdx.c
++++ b/target/i386/kvm/tdx.c
+@@ -660,6 +660,13 @@ static void tdx_finalize_vm(Notifier *notifier, void *unused)
+     /* Tdvf image was copied into private region above. It becomes unnecessary. */
+     ram_block = tdx_guest->tdvf_region->ram_block;
+     ram_block_discard_range(ram_block, 0, ram_block->max_length);
++
++    r = tdx_vm_ioctl(KVM_TDX_FINALIZE_VM, 0, NULL);
++    if (r < 0) {
++        error_report("KVM_TDX_FINALIZE_VM failed %s", strerror(-r));
++        exit(0);
++    }
++    tdx_guest->parent_obj.ready = true;
+ }
+ 
+ static Notifier tdx_machine_done_notify = {
+-- 
+2.39.2
+

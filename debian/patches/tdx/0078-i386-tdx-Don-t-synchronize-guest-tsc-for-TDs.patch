@@ -1,0 +1,32 @@
+From dba4f2881efb9c2fee984ea2bfba6de0bef9a78f Mon Sep 17 00:00:00 2001
+From: Isaku Yamahata <isaku.yamahata@intel.com>
+Date: Wed, 9 Dec 2020 12:24:35 -0800
+Subject: [PATCH 078/101] i386/tdx: Don't synchronize guest tsc for TDs
+
+TSC of TDs is not accessible and KVM doesn't allow access of
+MSR_IA32_TSC for TDs. To avoid the assert() in kvm_get_tsc, make
+kvm_synchronize_all_tsc() noop for TDs,
+
+Signed-off-by: Isaku Yamahata <isaku.yamahata@intel.com>
+Reviewed-by: Connor Kuehl <ckuehl@redhat.com>
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ target/i386/kvm/kvm.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/target/i386/kvm/kvm.c b/target/i386/kvm/kvm.c
+index 255c180987..cc69b20018 100644
+--- a/target/i386/kvm/kvm.c
++++ b/target/i386/kvm/kvm.c
+@@ -298,7 +298,7 @@ void kvm_synchronize_all_tsc(void)
+ {
+     CPUState *cpu;
+ 
+-    if (kvm_enabled()) {
++    if (kvm_enabled() && !is_tdx_vm()) {
+         CPU_FOREACH(cpu) {
+             run_on_cpu(cpu, do_kvm_synchronize_tsc, RUN_ON_CPU_NULL);
+         }
+-- 
+2.39.2
+

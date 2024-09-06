@@ -1,0 +1,133 @@
+From 46235bcc2f023a73515377605920115a97678610 Mon Sep 17 00:00:00 2001
+From: Xiaoyao Li <xiaoyao.li@intel.com>
+Date: Tue, 19 Apr 2022 09:58:06 +0800
+Subject: [PATCH 052/101] i386/tdx: Track mem_ptr for each firmware entry of
+ TDVF
+
+For each TDVF sections, QEMU needs to copy the content to guest
+private memory via KVM API (KVM_TDX_INIT_MEM_REGION).
+
+Introduce a field @mem_ptr for TdxFirmwareEntry to track the memory
+pointer of each TDVF sections. So that QEMU can add/copy them to guest
+private memory later.
+
+TDVF sections can be classified into two groups:
+ - Firmware itself, e.g., TDVF BFV and CFV, that located separately from
+   guest RAM. Its memory pointer is the bios pointer.
+
+ - Sections located at guest RAM, e.g., TEMP_MEM and TD_HOB.
+   mmap a new memory range for them.
+
+Register a machine_init_done callback to do the stuff.
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+Acked-by: Gerd Hoffmann <kraxel@redhat.com>
+---
+ hw/i386/tdvf.c         |  1 +
+ include/hw/i386/tdvf.h |  7 +++++++
+ target/i386/kvm/tdx.c  | 31 +++++++++++++++++++++++++++++++
+ 3 files changed, 39 insertions(+)
+
+diff --git a/hw/i386/tdvf.c b/hw/i386/tdvf.c
+index ff51f40088..0a64457051 100644
+--- a/hw/i386/tdvf.c
++++ b/hw/i386/tdvf.c
+@@ -189,6 +189,7 @@ int tdvf_parse_metadata(TdxFirmware *fw, void *flash_ptr, int size)
+     }
+     g_free(sections);
+ 
++    fw->mem_ptr = flash_ptr;
+     return 0;
+ 
+ err:
+diff --git a/include/hw/i386/tdvf.h b/include/hw/i386/tdvf.h
+index 593341eb2e..d880af245a 100644
+--- a/include/hw/i386/tdvf.h
++++ b/include/hw/i386/tdvf.h
+@@ -39,13 +39,20 @@ typedef struct TdxFirmwareEntry {
+     uint64_t size;
+     uint32_t type;
+     uint32_t attributes;
++
++    void *mem_ptr;
+ } TdxFirmwareEntry;
+ 
+ typedef struct TdxFirmware {
++    void *mem_ptr;
++
+     uint32_t nr_entries;
+     TdxFirmwareEntry *entries;
+ } TdxFirmware;
+ 
++#define for_each_tdx_fw_entry(fw, e)    \
++    for (e = (fw)->entries; e != (fw)->entries + (fw)->nr_entries; e++)
++
+ int tdvf_parse_metadata(TdxFirmware *fw, void *flash_ptr, int size);
+ 
+ #endif /* HW_I386_TDVF_H */
+diff --git a/target/i386/kvm/tdx.c b/target/i386/kvm/tdx.c
+index 22169ebd9b..8d697ddbfd 100644
+--- a/target/i386/kvm/tdx.c
++++ b/target/i386/kvm/tdx.c
+@@ -13,6 +13,7 @@
+ 
+ #include "qemu/osdep.h"
+ #include "qemu/error-report.h"
++#include "qemu/mmap-alloc.h"
+ #include "qapi/error.h"
+ #include "qom/object_interfaces.h"
+ #include "standard-headers/asm-x86/kvm_para.h"
+@@ -22,6 +23,7 @@
+ #include "exec/ramblock.h"
+ 
+ #include "hw/i386/x86.h"
++#include "hw/i386/tdvf.h"
+ #include "kvm_i386.h"
+ #include "tdx.h"
+ #include "../cpu-internal.h"
+@@ -452,6 +454,33 @@ static void update_tdx_cpuid_lookup_by_tdx_caps(void)
+             (tdx_caps->xfam_fixed1 & CPUID_XSTATE_XSS_MASK) >> 32;
+ }
+ 
++static void tdx_finalize_vm(Notifier *notifier, void *unused)
++{
++    TdxFirmware *tdvf = &tdx_guest->tdvf;
++    TdxFirmwareEntry *entry;
++
++    for_each_tdx_fw_entry(tdvf, entry) {
++        switch (entry->type) {
++        case TDVF_SECTION_TYPE_BFV:
++        case TDVF_SECTION_TYPE_CFV:
++            entry->mem_ptr = tdvf->mem_ptr + entry->data_offset;
++            break;
++        case TDVF_SECTION_TYPE_TD_HOB:
++        case TDVF_SECTION_TYPE_TEMP_MEM:
++            entry->mem_ptr = qemu_ram_mmap(-1, entry->size,
++                                           qemu_real_host_page_size(), 0, 0);
++            break;
++        default:
++            error_report("Unsupported TDVF section %d", entry->type);
++            exit(1);
++        }
++    }
++}
++
++static Notifier tdx_machine_done_notify = {
++    .notify = tdx_finalize_vm,
++};
++
+ int tdx_kvm_init(MachineState *ms, Error **errp)
+ {
+     TdxGuest *tdx = (TdxGuest *)object_dynamic_cast(OBJECT(ms->cgs),
+@@ -472,6 +501,8 @@ int tdx_kvm_init(MachineState *ms, Error **errp)
+      */
+     kvm_readonly_mem_allowed = false;
+ 
++    qemu_add_machine_init_done_notifier(&tdx_machine_done_notify);
++
+     tdx_guest = tdx;
+ 
+     return 0;
+-- 
+2.39.2
+

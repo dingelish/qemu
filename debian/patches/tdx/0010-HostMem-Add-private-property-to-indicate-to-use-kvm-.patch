@@ -1,0 +1,88 @@
+From 364f56eb7413e97eef94e88215f7d435c2e90d5f Mon Sep 17 00:00:00 2001
+From: Zhu Lingshan <lingshan.zhu@intel.com>
+Date: Thu, 24 Aug 2023 01:24:06 +0800
+Subject: [PATCH 010/101] HostMem: Add private property to indicate to use kvm
+ gmem
+
+Signed-off-by: Isaku Yamahata <isaku.yamahata@intel.com>
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ backends/hostmem.c       | 18 ++++++++++++++++++
+ include/sysemu/hostmem.h |  2 +-
+ qapi/qom.json            |  4 ++++
+ 3 files changed, 23 insertions(+), 1 deletion(-)
+
+diff --git a/backends/hostmem.c b/backends/hostmem.c
+index 747e7838c0..dbdbb0aafd 100644
+--- a/backends/hostmem.c
++++ b/backends/hostmem.c
+@@ -461,6 +461,20 @@ static void host_memory_backend_set_reserve(Object *o, bool value, Error **errp)
+     }
+     backend->reserve = value;
+ }
++
++static bool host_memory_backend_get_private(Object *o, Error **errp)
++{
++    HostMemoryBackend *backend = MEMORY_BACKEND(o);
++
++    return backend->private;
++}
++
++static void host_memory_backend_set_private(Object *o, bool value, Error **errp)
++{
++    HostMemoryBackend *backend = MEMORY_BACKEND(o);
++
++    backend->private = value;
++}
+ #endif /* CONFIG_LINUX */
+ 
+ static bool
+@@ -541,6 +555,10 @@ host_memory_backend_class_init(ObjectClass *oc, void *data)
+         host_memory_backend_get_reserve, host_memory_backend_set_reserve);
+     object_class_property_set_description(oc, "reserve",
+         "Reserve swap space (or huge pages) if applicable");
++    object_class_property_add_bool(oc, "private",
++        host_memory_backend_get_private, host_memory_backend_set_private);
++    object_class_property_set_description(oc, "private",
++        "Use KVM gmem private memory");
+ #endif /* CONFIG_LINUX */
+     /*
+      * Do not delete/rename option. This option must be considered stable
+diff --git a/include/sysemu/hostmem.h b/include/sysemu/hostmem.h
+index 39326f1d4f..d889703956 100644
+--- a/include/sysemu/hostmem.h
++++ b/include/sysemu/hostmem.h
+@@ -65,7 +65,7 @@ struct HostMemoryBackend {
+     /* protected */
+     uint64_t size;
+     bool merge, dump, use_canonical_path;
+-    bool prealloc, is_mapped, share, reserve;
++    bool prealloc, is_mapped, share, reserve, private;
+     uint32_t prealloc_threads;
+     ThreadContext *prealloc_context;
+     DECLARE_BITMAP(host_nodes, MAX_NODES + 1);
+diff --git a/qapi/qom.json b/qapi/qom.json
+index a877b879b9..ddbfa309b1 100644
+--- a/qapi/qom.json
++++ b/qapi/qom.json
+@@ -593,6 +593,9 @@
+ # @reserve: if true, reserve swap space (or huge pages) if applicable
+ #           (default: true) (since 6.1)
+ #
++# @private: if true, use KVM gmem private memory
++#           (default: false) (since 8.1)
++#
+ # @size: size of the memory region in bytes
+ #
+ # @x-use-canonical-path-for-ramblock-id: if true, the canonical path is used
+@@ -620,6 +623,7 @@
+             '*prealloc-context': 'str',
+             '*share': 'bool',
+             '*reserve': 'bool',
++            '*private': 'bool',
+             'size': 'size',
+             '*x-use-canonical-path-for-ramblock-id': 'bool' } }
+ 
+-- 
+2.39.2
+

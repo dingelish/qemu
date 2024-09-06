@@ -1,0 +1,31 @@
+From ec011edfe051105399902ead7393abe15d519044 Mon Sep 17 00:00:00 2001
+From: Isaku Yamahata <isaku.yamahata@intel.com>
+Date: Wed, 23 Nov 2022 13:52:16 -0800
+Subject: [PATCH 071/101] Make the default log mask to LOG_GUEST_ERROR from 0
+
+When debugging with TDG.VP.VMCALL<ReportFatalError>, "-d guest_errors"
+needs to be passed to set log mask to LOG_GUEST_ERROR to see the message in
+the qemu log.  Because it's hard to find the option, make it enabled by
+default for debug
+
+Signed-off-by: Isaku Yamahata <isaku.yamahata@intel.com>
+---
+ softmmu/vl.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/softmmu/vl.c b/softmmu/vl.c
+index ea20b23e4c..f0f9779ad9 100644
+--- a/softmmu/vl.c
++++ b/softmmu/vl.c
+@@ -2409,7 +2409,7 @@ static void qemu_process_early_options(void)
+ 
+     /* Open the logfile at this point and set the log mask if necessary.  */
+     {
+-        int mask = 0;
++        int mask = LOG_GUEST_ERROR;
+         if (log_mask) {
+             mask = qemu_str_to_log_mask(log_mask);
+             if (!mask) {
+-- 
+2.39.2
+

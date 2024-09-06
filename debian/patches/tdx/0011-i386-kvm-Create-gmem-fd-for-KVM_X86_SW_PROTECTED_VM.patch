@@ -1,0 +1,81 @@
+From 4f70c760b3aaca2a210dc5d08bbe53210ee2237b Mon Sep 17 00:00:00 2001
+From: Zhu Lingshan <lingshan.zhu@intel.com>
+Date: Thu, 24 Aug 2023 01:33:36 +0800
+Subject: [PATCH 011/101] i386/kvm: Create gmem fd for KVM_X86_SW_PROTECTED_VM
+
+Register a memory listener for KVM_X86_SW_PROVTED_VM. It creates gmem
+for the backend who sets the private property.
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ target/i386/kvm/kvm.c | 38 ++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 38 insertions(+)
+
+diff --git a/target/i386/kvm/kvm.c b/target/i386/kvm/kvm.c
+index 7f3d52bd6a..c03c95b060 100644
+--- a/target/i386/kvm/kvm.c
++++ b/target/i386/kvm/kvm.c
+@@ -37,6 +37,7 @@
+ #include "hyperv-proto.h"
+ 
+ #include "exec/gdbstub.h"
++#include "exec/ramblock.h"
+ #include "qemu/host-utils.h"
+ #include "qemu/main-loop.h"
+ #include "qemu/ratelimit.h"
+@@ -2587,8 +2588,41 @@ static void register_smram_listener(Notifier *n, void *unused)
+                                  &smram_address_space, 1, "kvm-smram");
+ }
+ 
++static void kvm_x86_sw_protected_vm_region_add(MemoryListener *listenr,
++                                       MemoryRegionSection *section)
++{
++    MemoryRegion *mr = section->mr;
++    Object *owner = memory_region_owner(mr);
++    int fd;
++
++    if (owner && object_dynamic_cast(owner, TYPE_MEMORY_BACKEND) &&
++        object_property_get_bool(owner, "private", NULL) &&
++        mr->ram_block && mr->ram_block->gmem_fd < 0) {
++        struct kvm_create_guest_memfd gmem = {
++            .size = memory_region_size(mr),
++            /* TODO: to decide whether KVM_GUEST_MEMFD_ALLOW_HUGEPAGE is supported */
++            .flags = KVM_GUEST_MEMFD_ALLOW_HUGEPAGE,
++        };
++
++        fd = kvm_vm_ioctl(kvm_state, KVM_CREATE_GUEST_MEMFD, &gmem);
++        if (fd < 0) {
++            error_report("%s: error creating gmem: %s\n", __func__, strerror(-fd));
++            exit(1);
++        }
++        memory_region_set_gmem_fd(mr, fd);
++    }
++}
++
++static MemoryListener kvm_x86_sw_protected_vm_memory_listener = {
++    .name = "kvm_x86_sw_protected_vm_memory_listener",
++    .region_add = kvm_x86_sw_protected_vm_region_add,
++    /* Higher than KVM memory listener = 10. */
++    .priority = 20,
++};
++
+ int kvm_arch_init(MachineState *ms, KVMState *s)
+ {
++    X86MachineState *x86ms = X86_MACHINE(ms);
+     uint64_t identity_base = 0xfffbc000;
+     uint64_t shadow_mem;
+     int ret;
+@@ -2613,6 +2647,10 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
+         return ret;
+     }
+ 
++    if (x86ms->vm_type == KVM_X86_SW_PROTECTED_VM) {
++        memory_listener_register(&kvm_x86_sw_protected_vm_memory_listener, &address_space_memory);
++    }
++
+     if (!kvm_check_extension(s, KVM_CAP_IRQ_ROUTING)) {
+         error_report("kvm: KVM_CAP_IRQ_ROUTING not supported by KVM");
+         return -ENOTSUP;
+-- 
+2.39.2
+

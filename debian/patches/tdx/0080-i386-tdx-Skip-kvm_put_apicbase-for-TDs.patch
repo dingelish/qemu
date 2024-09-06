@@ -1,0 +1,31 @@
+From a299fef748d48b0df3c657522444ac939b2e27b0 Mon Sep 17 00:00:00 2001
+From: Xiaoyao Li <xiaoyao.li@intel.com>
+Date: Wed, 16 Mar 2022 15:42:30 +0800
+Subject: [PATCH 080/101] i386/tdx: Skip kvm_put_apicbase() for TDs
+
+KVM doesn't allow wirting to MSR_IA32_APICBASE for TDs.
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ target/i386/kvm/kvm.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/target/i386/kvm/kvm.c b/target/i386/kvm/kvm.c
+index 301ef5435a..1ca279a316 100644
+--- a/target/i386/kvm/kvm.c
++++ b/target/i386/kvm/kvm.c
+@@ -3204,6 +3204,11 @@ void kvm_put_apicbase(X86CPU *cpu, uint64_t value)
+ {
+     int ret;
+ 
++    /* TODO: Allow accessing guest state for debug TDs. */
++    if (is_tdx_vm()) {
++        return;
++    }
++
+     ret = kvm_put_one_msr(cpu, MSR_IA32_APICBASE, value);
+     assert(ret == 1);
+ }
+-- 
+2.39.2
+

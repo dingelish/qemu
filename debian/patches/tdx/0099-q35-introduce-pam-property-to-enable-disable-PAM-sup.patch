@@ -1,0 +1,289 @@
+From c761c6fa1d433c93cfa67062735a59fe66f98360 Mon Sep 17 00:00:00 2001
+From: Zhu Lingshan <lingshan.zhu@intel.com>
+Date: Fri, 25 Aug 2023 02:35:31 +0800
+Subject: [PATCH 099/101] q35: introduce pam property to enable/disable PAM
+ support
+
+Introduce has_pam_memory_area property to enable/disable PAM feature to Q35
+and disable pam For TD guest.
+
+Signed-off-by: Isaku Yamahata <isaku.yamahata@intel.com>
+---
+ hw/i386/pc_q35.c           |  2 ++
+ hw/i386/x86.c              | 49 ++++++++++++++++++++++++++++++++++++++
+ hw/pci-host/q35.c          | 42 +++++++++++++++++++++++---------
+ include/hw/i386/pc.h       |  1 +
+ include/hw/i386/x86.h      |  3 +++
+ include/hw/pci-host/q35.h  |  1 +
+ target/i386/kvm/kvm-stub.c |  5 ++++
+ target/i386/kvm/kvm.c      |  5 ++++
+ target/i386/kvm/kvm_i386.h |  1 +
+ 9 files changed, 98 insertions(+), 11 deletions(-)
+
+diff --git a/hw/i386/pc_q35.c b/hw/i386/pc_q35.c
+index 4eb1ea3419..8f72fd2569 100644
+--- a/hw/i386/pc_q35.c
++++ b/hw/i386/pc_q35.c
+@@ -233,6 +233,8 @@ static void pc_q35_init(MachineState *machine)
+                             x86ms->above_4g_mem_size, NULL);
+     object_property_set_bool(OBJECT(q35_host), PCI_HOST_PROP_SMM_RANGES,
+                             x86_machine_is_smm_enabled(x86ms), NULL);
++    object_property_set_bool(OBJECT(q35_host), PCI_HOST_PROP_PAM_MEMORY_AREA,
++                             x86_machine_is_pam_enabled(x86ms), NULL);
+ 
+     /* pci */
+     sysbus_realize_and_unref(SYS_BUS_DEVICE(q35_host), &error_fatal);
+diff --git a/hw/i386/x86.c b/hw/i386/x86.c
+index 5673844842..aa0b4c1003 100644
+--- a/hw/i386/x86.c
++++ b/hw/i386/x86.c
+@@ -1310,6 +1310,49 @@ static void x86_machine_set_pic(Object *obj, Visitor *v, const char *name,
+     visit_type_OnOffAuto(v, name, &x86ms->pic, errp);
+ }
+ 
++bool x86_machine_is_pam_enabled(const X86MachineState *x86ms)
++{
++    bool pam_available = false;
++
++    if (x86ms->pam == ON_OFF_AUTO_OFF) {
++        return false;
++    }
++
++    if (tcg_enabled() || qtest_enabled()) {
++        pam_available = true;
++    } else if (kvm_enabled()) {
++        pam_available = kvm_has_pam();
++    }
++
++    if (pam_available) {
++        return true;
++    }
++
++    if (x86ms->pam == ON_OFF_AUTO_ON) {
++        error_report("Programmable Attribute Map(PAM) Memory Area not supported "
++                     "by this hypervisor.");
++        exit(1);
++    }
++    return false;
++}
++
++static void x86_machine_get_pam(Object *obj, Visitor *v, const char *name,
++                               void *opaque, Error **errp)
++{
++    X86MachineState *x86ms = X86_MACHINE(obj);
++    OnOffAuto pam = x86ms->pam;
++
++    visit_type_OnOffAuto(v, name, &pam, errp);
++}
++
++static void x86_machine_set_pam(Object *obj, Visitor *v, const char *name,
++                               void *opaque, Error **errp)
++{
++    X86MachineState *x86ms = X86_MACHINE(obj);
++
++    visit_type_OnOffAuto(v, name, &x86ms->pam, errp);
++}
++
+ static char *x86_machine_get_oem_id(Object *obj, Error **errp)
+ {
+     X86MachineState *x86ms = X86_MACHINE(obj);
+@@ -1469,6 +1512,12 @@ static void x86_machine_class_init(ObjectClass *oc, void *data)
+     object_class_property_set_description(oc, X86_MACHINE_PIC,
+         "Enable i8259 PIC");
+ 
++    object_class_property_add(oc, X86_MACHINE_PAM, "OnOffAuto",
++        x86_machine_get_pam, x86_machine_set_pam,
++        NULL, NULL);
++    object_class_property_set_description(oc, X86_MACHINE_PAM,
++        "Enable PAM");
++
+     object_class_property_add_str(oc, X86_MACHINE_OEM_ID,
+                                   x86_machine_get_oem_id,
+                                   x86_machine_set_oem_id);
+diff --git a/hw/pci-host/q35.c b/hw/pci-host/q35.c
+index adcd243481..3209839103 100644
+--- a/hw/pci-host/q35.c
++++ b/hw/pci-host/q35.c
+@@ -188,6 +188,8 @@ static Property q35_host_props[] = {
+                      mch.above_4g_mem_size, 0),
+     DEFINE_PROP_BOOL(PCI_HOST_PROP_SMM_RANGES, Q35PCIHost,
+                      mch.has_smm_ranges, true),
++    DEFINE_PROP_BOOL(PCI_HOST_PROP_PAM_MEMORY_AREA, Q35PCIHost,
++                     mch.has_pam_memory_area, true),
+     DEFINE_PROP_BOOL("x-pci-hole64-fix", Q35PCIHost, pci_hole64_fix, true),
+     DEFINE_PROP_END_OF_LIST(),
+ };
+@@ -477,9 +479,11 @@ static void mch_write_config(PCIDevice *d,
+ 
+     pci_default_write_config(d, address, val, len);
+ 
+-    if (ranges_overlap(address, len, MCH_HOST_BRIDGE_PAM0,
+-                       MCH_HOST_BRIDGE_PAM_SIZE)) {
+-        mch_update_pam(mch);
++    if (mch->has_pam_memory_area) {
++        if (ranges_overlap(address, len, MCH_HOST_BRIDGE_PAM0,
++                           MCH_HOST_BRIDGE_PAM_SIZE)) {
++            mch_update_pam(mch);
++        }
+     }
+ 
+     if (ranges_overlap(address, len, MCH_HOST_BRIDGE_PCIEXBAR,
+@@ -510,7 +514,9 @@ static void mch_update(MCHPCIState *mch)
+ {
+     mch_update_pciexbar(mch);
+ 
+-    mch_update_pam(mch);
++    if (mch->has_pam_memory_area) {
++        mch_update_pam(mch);
++    }
+     if (mch->has_smm_ranges) {
+         mch_update_smram(mch);
+         mch_update_ext_tseg_mbytes(mch);
+@@ -552,12 +558,19 @@ static void mch_reset(DeviceState *qdev)
+ {
+     PCIDevice *d = PCI_DEVICE(qdev);
+     MCHPCIState *mch = MCH_PCI_DEVICE(d);
++    int i;
+ 
+     if (!mch->txt_locked) {
+         pci_set_quad(d->config + MCH_HOST_BRIDGE_PCIEXBAR,
+                      MCH_HOST_BRIDGE_PCIEXBAR_DEFAULT);
+     }
+ 
++    if (mch->has_pam_memory_area) {
++        for (i = 0; i < MCH_HOST_BRIDGE_PAM_NB; i++) {
++            pci_set_byte(d->config + MCH_HOST_BRIDGE_PAM0 + i, 0);
++        }
++    }
++
+     if (mch->has_smm_ranges) {
+         d->config[MCH_HOST_BRIDGE_SMRAM] = MCH_HOST_BRIDGE_SMRAM_DEFAULT;
+         d->config[MCH_HOST_BRIDGE_ESMRAMC] = MCH_HOST_BRIDGE_ESMRAMC_DEFAULT;
+@@ -599,14 +612,21 @@ static void mch_realize(PCIDevice *d, Error **errp)
+     pc_pci_as_mapping_init(mch->system_memory, mch->pci_address_space);
+ 
+     /* PAM */
+-    init_pam(DEVICE(mch), mch->ram_memory, mch->system_memory,
+-             mch->pci_address_space, &mch->pam_regions[0],
+-             PAM_BIOS_BASE, PAM_BIOS_SIZE);
+-    for (i = 0; i < ARRAY_SIZE(mch->pam_regions) - 1; ++i) {
++    if (mch->has_pam_memory_area) {
+         init_pam(DEVICE(mch), mch->ram_memory, mch->system_memory,
+-                 mch->pci_address_space, &mch->pam_regions[i+1],
+-                 PAM_EXPAN_BASE + i * PAM_EXPAN_SIZE, PAM_EXPAN_SIZE);
+-    }
++                 mch->pci_address_space, &mch->pam_regions[0],
++                 PAM_BIOS_BASE, PAM_BIOS_SIZE);
++        for (i = 0; i < ARRAY_SIZE(mch->pam_regions) - 1; ++i) {
++            init_pam(DEVICE(mch), mch->ram_memory, mch->system_memory,
++                     mch->pci_address_space, &mch->pam_regions[i+1],
++                     PAM_EXPAN_BASE + i * PAM_EXPAN_SIZE, PAM_EXPAN_SIZE);
++        }
++     } else {
++        /* disallow to configure PAM */
++        for (i = 0; i < MCH_HOST_BRIDGE_PAM_NB; i++) {
++            pci_set_byte(d->wmask + MCH_HOST_BRIDGE_PAM0 + i, 0);
++        }
++     }
+ 
+     if (!mch->has_smm_ranges) {
+         return;
+diff --git a/include/hw/i386/pc.h b/include/hw/i386/pc.h
+index 4d1b9296bc..55acd3c785 100644
+--- a/include/hw/i386/pc.h
++++ b/include/hw/i386/pc.h
+@@ -151,6 +151,7 @@ void pc_guest_info_init(PCMachineState *pcms);
+ #define PCI_HOST_BELOW_4G_MEM_SIZE     "below-4g-mem-size"
+ #define PCI_HOST_ABOVE_4G_MEM_SIZE     "above-4g-mem-size"
+ #define PCI_HOST_PROP_SMM_RANGES       "smm-ranges"
++#define PCI_HOST_PROP_PAM_MEMORY_AREA  "pam-memory-area"
+ 
+ 
+ void pc_pci_as_mapping_init(MemoryRegion *system_memory,
+diff --git a/include/hw/i386/x86.h b/include/hw/i386/x86.h
+index c4bfb67b03..1f26a84444 100644
+--- a/include/hw/i386/x86.h
++++ b/include/hw/i386/x86.h
+@@ -71,6 +71,7 @@ struct X86MachineState {
+     OnOffAuto acpi;
+     OnOffAuto pit;
+     OnOffAuto pic;
++    OnOffAuto pam;
+ 
+     char *oem_id;
+     char *oem_table_id;
+@@ -92,6 +93,7 @@ struct X86MachineState {
+ #define X86_MACHINE_ACPI             "acpi"
+ #define X86_MACHINE_PIT              "pit"
+ #define X86_MACHINE_PIC              "pic"
++#define X86_MACHINE_PAM              "pam"
+ #define X86_MACHINE_OEM_ID           "x-oem-id"
+ #define X86_MACHINE_OEM_TABLE_ID     "x-oem-table-id"
+ #define X86_MACHINE_BUS_LOCK_RATELIMIT  "bus-lock-ratelimit"
+@@ -130,6 +132,7 @@ void x86_load_linux(X86MachineState *x86ms,
+ 
+ bool x86_machine_is_smm_enabled(const X86MachineState *x86ms);
+ bool x86_machine_is_acpi_enabled(const X86MachineState *x86ms);
++bool x86_machine_is_pam_enabled(const X86MachineState *x86ms);
+ 
+ /* Global System Interrupts */
+ 
+diff --git a/include/hw/pci-host/q35.h b/include/hw/pci-host/q35.h
+index ad3db4ad14..7369b6d053 100644
+--- a/include/hw/pci-host/q35.h
++++ b/include/hw/pci-host/q35.h
+@@ -51,6 +51,7 @@ struct MCHPCIState {
+     MemoryRegion smbase_blackhole, smbase_window;
+     bool has_smram_at_smbase;
+     bool has_smm_ranges;
++    bool has_pam_memory_area;
+     bool txt_locked;
+     Range pci_hole;
+     uint64_t below_4g_mem_size;
+diff --git a/target/i386/kvm/kvm-stub.c b/target/i386/kvm/kvm-stub.c
+index e052f1c7b0..c33cc9d632 100644
+--- a/target/i386/kvm/kvm-stub.c
++++ b/target/i386/kvm/kvm-stub.c
+@@ -19,6 +19,11 @@ bool kvm_has_smm(void)
+     return 1;
+ }
+ 
++bool kvm_has_pam(void)
++{
++    return true;
++}
++
+ bool kvm_enable_x2apic(void)
+ {
+     return false;
+diff --git a/target/i386/kvm/kvm.c b/target/i386/kvm/kvm.c
+index 85a02a1e9d..0b1af8abc4 100644
+--- a/target/i386/kvm/kvm.c
++++ b/target/i386/kvm/kvm.c
+@@ -212,6 +212,11 @@ bool kvm_has_smm(void)
+     return kvm_vm_check_extension(kvm_state, KVM_CAP_X86_SMM);
+ }
+ 
++bool kvm_has_pam(void)
++{
++    return true;
++}
++
+ bool kvm_has_adjust_clock_stable(void)
+ {
+     int ret = kvm_check_extension(kvm_state, KVM_CAP_ADJUST_CLOCK);
+diff --git a/target/i386/kvm/kvm_i386.h b/target/i386/kvm/kvm_i386.h
+index fd7e76fcf8..0a702c110a 100644
+--- a/target/i386/kvm/kvm_i386.h
++++ b/target/i386/kvm/kvm_i386.h
+@@ -38,6 +38,7 @@ uint32_t kvm_x86_arch_cpuid(CPUX86State *env, struct kvm_cpuid_entry2 *entries,
+ #endif  /* CONFIG_KVM */
+ 
+ bool kvm_has_smm(void);
++bool kvm_has_pam(void);
+ bool kvm_has_adjust_clock(void);
+ bool kvm_has_adjust_clock_stable(void);
+ bool kvm_has_exception_payload(void);
+-- 
+2.39.2
+

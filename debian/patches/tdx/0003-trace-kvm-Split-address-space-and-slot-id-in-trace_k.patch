@@ -1,0 +1,47 @@
+From 8ed8d1e6a30e7ce2f6a4b400435406c2fdedaa82 Mon Sep 17 00:00:00 2001
+From: Xiaoyao Li <xiaoyao.li@intel.com>
+Date: Fri, 23 Apr 2021 13:13:41 +0800
+Subject: [PATCH 003/101] trace/kvm: Split address space and slot id in
+ trace_kvm_set_user_memory()
+
+The upper 16 bits of kvm_userspace_memory_region::slot are
+address space id. Parse it separately in trace_kvm_set_user_memory().
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ accel/kvm/kvm-all.c    | 5 +++--
+ accel/kvm/trace-events | 2 +-
+ 2 files changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/accel/kvm/kvm-all.c b/accel/kvm/kvm-all.c
+index cf3a88d90e..fbd0fcb708 100644
+--- a/accel/kvm/kvm-all.c
++++ b/accel/kvm/kvm-all.c
+@@ -309,8 +309,9 @@ static int kvm_set_user_memory_region(KVMMemoryListener *kml, KVMSlot *slot, boo
+     ret = kvm_vm_ioctl(s, KVM_SET_USER_MEMORY_REGION, &mem);
+     slot->old_flags = mem.flags;
+ err:
+-    trace_kvm_set_user_memory(mem.slot, mem.flags, mem.guest_phys_addr,
+-                              mem.memory_size, mem.userspace_addr, ret);
++    trace_kvm_set_user_memory(mem.slot >> 16, (uint16_t)mem.slot, mem.flags,
++                              mem.guest_phys_addr, mem.memory_size,
++                              mem.userspace_addr, ret);
+     if (ret < 0) {
+         error_report("%s: KVM_SET_USER_MEMORY_REGION failed, slot=%d,"
+                      " start=0x%" PRIx64 ", size=0x%" PRIx64 ": %s",
+diff --git a/accel/kvm/trace-events b/accel/kvm/trace-events
+index 399aaeb0ec..14ebfa1b99 100644
+--- a/accel/kvm/trace-events
++++ b/accel/kvm/trace-events
+@@ -15,7 +15,7 @@ kvm_irqchip_update_msi_route(int virq) "Updating MSI route virq=%d"
+ kvm_irqchip_release_virq(int virq) "virq %d"
+ kvm_set_ioeventfd_mmio(int fd, uint64_t addr, uint32_t val, bool assign, uint32_t size, bool datamatch) "fd: %d @0x%" PRIx64 " val=0x%x assign: %d size: %d match: %d"
+ kvm_set_ioeventfd_pio(int fd, uint16_t addr, uint32_t val, bool assign, uint32_t size, bool datamatch) "fd: %d @0x%x val=0x%x assign: %d size: %d match: %d"
+-kvm_set_user_memory(uint32_t slot, uint32_t flags, uint64_t guest_phys_addr, uint64_t memory_size, uint64_t userspace_addr, int ret) "Slot#%d flags=0x%x gpa=0x%"PRIx64 " size=0x%"PRIx64 " ua=0x%"PRIx64 " ret=%d"
++kvm_set_user_memory(uint16_t as, uint16_t slot, uint32_t flags, uint64_t guest_phys_addr, uint64_t memory_size, uint64_t userspace_addr, int ret) "AddrSpace#%d Slot#%d flags=0x%x gpa=0x%"PRIx64 " size=0x%"PRIx64 " ua=0x%"PRIx64 " ret=%d"
+ kvm_clear_dirty_log(uint32_t slot, uint64_t start, uint32_t size) "slot#%"PRId32" start 0x%"PRIx64" size 0x%"PRIx32
+ kvm_resample_fd_notify(int gsi) "gsi %d"
+ kvm_dirty_ring_full(int id) "vcpu %d"
+-- 
+2.39.2
+

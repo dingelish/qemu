@@ -1,0 +1,36 @@
+From 29b29387360459dba81736cbb32697e8d53ffee8 Mon Sep 17 00:00:00 2001
+From: Zhu Lingshan <lingshan.zhu@intel.com>
+Date: Thu, 24 Aug 2023 01:21:06 +0800
+Subject: [PATCH 008/101] i386/pc: Drop pc_machine_kvm_type()
+
+pc_machine_kvm_type() was introduced by commit e21be724eaf5 ("i386/xen:
+add pc_machine_kvm_type to initialize XEN_EMULATE mode") to do Xen
+specific initialization by utilizing kvm_type method.
+
+commit eeedfe6c6316 ("hw/xen: Simplify emulated Xen platform init")
+moves the Xen specific initialization to pc_basic_device_init().
+
+There is no need to keep the PC specific kvm_type() implementation
+anymore. On the other hand, later patch will implement kvm_type()
+method for all x86/i386 machines to support KVM_X86_SW_PROTECTED_VM.
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ include/hw/i386/pc.h | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/include/hw/i386/pc.h b/include/hw/i386/pc.h
+index 8206d5405a..1cc0bd2d7c 100644
+--- a/include/hw/i386/pc.h
++++ b/include/hw/i386/pc.h
+@@ -296,7 +296,6 @@ int pc_machine_kvm_type(MachineState *machine, const char *vm_type);
+         MachineClass *mc = MACHINE_CLASS(oc); \
+         optsfn(mc); \
+         mc->init = initfn; \
+-        mc->kvm_type = pc_machine_kvm_type; \
+     } \
+     static const TypeInfo pc_machine_type_##suffix = { \
+         .name       = namestr TYPE_MACHINE_SUFFIX, \
+-- 
+2.39.2
+

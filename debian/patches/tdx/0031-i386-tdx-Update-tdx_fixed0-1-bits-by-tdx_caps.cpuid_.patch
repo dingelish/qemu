@@ -1,0 +1,70 @@
+From 64210cf8e21ad3d78bf3722e86eb6f10858aebe9 Mon Sep 17 00:00:00 2001
+From: Xiaoyao Li <xiaoyao.li@intel.com>
+Date: Sat, 30 Jul 2022 14:41:27 +0800
+Subject: [PATCH 031/101] i386/tdx: Update tdx_fixed0/1 bits by
+ tdx_caps.cpuid_config[]
+
+tdx_cpuid_lookup[].tdx_fixed0/1 is the QEMU maintained data which
+reflects TDX restrictions regrading how some CPUID is virtualized by
+TDX. It's retrieved from TDX spec. However, TDX may change some fixed
+fields to configurable in the future. Update
+tdx_cpuid.lookup[].tdx_fixed0/1 fields by removing the bits that
+reported from TDX module as configurable. This can adapt with the
+updated TDX (module) automatically.
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ target/i386/kvm/tdx.c | 30 ++++++++++++++++++++++++++++++
+ 1 file changed, 30 insertions(+)
+
+diff --git a/target/i386/kvm/tdx.c b/target/i386/kvm/tdx.c
+index 3198bc9fd5..4518c79aec 100644
+--- a/target/i386/kvm/tdx.c
++++ b/target/i386/kvm/tdx.c
+@@ -369,6 +369,34 @@ static void get_tdx_capabilities(void)
+     tdx_caps = caps;
+ }
+ 
++static void update_tdx_cpuid_lookup_by_tdx_caps(void)
++{
++    KvmTdxCpuidLookup *entry;
++    FeatureWordInfo *fi;
++    uint32_t config;
++    FeatureWord w;
++
++    /*
++     * Patch tdx_fixed0/1 by tdx_caps that what TDX module reports as
++     * configurable is not fixed.
++     */
++    for (w = 0; w < FEATURE_WORDS; w++) {
++        fi = &feature_word_info[w];
++        entry = &tdx_cpuid_lookup[w];
++
++        if (fi->type != CPUID_FEATURE_WORD) {
++            continue;
++        }
++
++        config = tdx_cap_cpuid_config(fi->cpuid.eax,
++                                      fi->cpuid.needs_ecx ? fi->cpuid.ecx : ~0u,
++                                      fi->cpuid.reg);
++
++        entry->tdx_fixed0 &= ~config;
++        entry->tdx_fixed1 &= ~config;
++    }
++}
++
+ int tdx_kvm_init(MachineState *ms, Error **errp)
+ {
+     TdxGuest *tdx = (TdxGuest *)object_dynamic_cast(OBJECT(ms->cgs),
+@@ -378,6 +406,8 @@ int tdx_kvm_init(MachineState *ms, Error **errp)
+         get_tdx_capabilities();
+     }
+ 
++    update_tdx_cpuid_lookup_by_tdx_caps();
++
+     tdx_guest = tdx;
+ 
+     return 0;
+-- 
+2.39.2
+

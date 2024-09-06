@@ -1,0 +1,122 @@
+From 81687da0b90b43d5797c49f238c2cabd5168231a Mon Sep 17 00:00:00 2001
+From: Isaku Yamahata <isaku.yamahata@intel.com>
+Date: Mon, 12 Jun 2023 12:51:55 -0700
+Subject: [PATCH 097/101] confidential guest support, KVM/TDX: Disable pv clock
+ for guest TD
+
+KVM TDX guest doesn't allow KVM clock.  Although guest TD doesn't use a KVM
+clock, qemu creates it by default with i386 KVM enabled.  When guest TD
+crashes and KVM_RUN returns -EIO, the following message is shown.
+  KVM_GET_CLOCK failed: Input/output error
+The message confuses the user and misleads the debug process.  Don't create
+KVM_CLOCK when confidential computing is enabled, and it has a property to
+disable the pv clock.
+
+Signed-off-by: Isaku Yamahata <isaku.yamahata@intel.com>
+---
+ backends/confidential-guest-support.c     | 16 ++++++++++++++++
+ hw/i386/kvm/clock.c                       | 12 ++++++++++--
+ include/exec/confidential-guest-support.h |  4 ++++
+ target/i386/kvm/tdx.c                     |  3 +++
+ 4 files changed, 33 insertions(+), 2 deletions(-)
+
+diff --git a/backends/confidential-guest-support.c b/backends/confidential-guest-support.c
+index 052fde8db0..bc35cf8c10 100644
+--- a/backends/confidential-guest-support.c
++++ b/backends/confidential-guest-support.c
+@@ -20,8 +20,24 @@ OBJECT_DEFINE_ABSTRACT_TYPE(ConfidentialGuestSupport,
+                             CONFIDENTIAL_GUEST_SUPPORT,
+                             OBJECT)
+ 
++static bool cgs_get_disable_pv_clock(Object *obj, Error **errp)
++{
++    ConfidentialGuestSupport *cgs = CONFIDENTIAL_GUEST_SUPPORT(obj);
++
++    return cgs->disable_pv_clock;
++}
++
++static void cgs_set_disable_pv_clock(Object *obj, bool value, Error **errp)
++{
++    ConfidentialGuestSupport *cgs = CONFIDENTIAL_GUEST_SUPPORT(obj);
++
++    cgs->disable_pv_clock = value;
++}
++
+ static void confidential_guest_support_class_init(ObjectClass *oc, void *data)
+ {
++    object_class_property_add_bool(oc, CONFIDENTIAL_GUEST_SUPPORT_DISABLE_PV_CLOCK,
++                                   cgs_get_disable_pv_clock, cgs_set_disable_pv_clock);
+ }
+ 
+ static void confidential_guest_support_init(Object *obj)
+diff --git a/hw/i386/kvm/clock.c b/hw/i386/kvm/clock.c
+index df70b4a033..2282f84fd1 100644
+--- a/hw/i386/kvm/clock.c
++++ b/hw/i386/kvm/clock.c
+@@ -19,9 +19,11 @@
+ #include "sysemu/kvm.h"
+ #include "sysemu/runstate.h"
+ #include "sysemu/hw_accel.h"
++#include "exec/confidential-guest-support.h"
+ #include "kvm/kvm_i386.h"
+ #include "migration/vmstate.h"
+ #include "hw/sysbus.h"
++#include "hw/boards.h"
+ #include "hw/kvm/clock.h"
+ #include "hw/qdev-properties.h"
+ #include "qapi/error.h"
+@@ -331,8 +333,14 @@ static const TypeInfo kvmclock_info = {
+ void kvmclock_create(bool create_always)
+ {
+     X86CPU *cpu = X86_CPU(first_cpu);
+-
+-    if (!kvm_enabled() || !kvm_has_adjust_clock())
++    MachineState *ms = MACHINE(qdev_get_machine());
++    ConfidentialGuestSupport *cgs = ms->cgs;
++
++    if (!kvm_enabled() || !kvm_has_adjust_clock() ||
++        (cgs &&
++         object_property_get_bool(OBJECT(cgs),
++                                  CONFIDENTIAL_GUEST_SUPPORT_DISABLE_PV_CLOCK,
++                                  NULL)))
+         return;
+ 
+     if (create_always ||
+diff --git a/include/exec/confidential-guest-support.h b/include/exec/confidential-guest-support.h
+index ba2dd4b5df..7cd3d6226d 100644
+--- a/include/exec/confidential-guest-support.h
++++ b/include/exec/confidential-guest-support.h
+@@ -51,12 +51,16 @@ struct ConfidentialGuestSupport {
+      * so 'ready' is not set, we'll abort.
+      */
+     bool ready;
++
++    bool disable_pv_clock;
+ };
+ 
+ typedef struct ConfidentialGuestSupportClass {
+     ObjectClass parent;
+ } ConfidentialGuestSupportClass;
+ 
++#define CONFIDENTIAL_GUEST_SUPPORT_DISABLE_PV_CLOCK     "disable-pv-clock"
++
+ #endif /* !CONFIG_USER_ONLY */
+ 
+ #endif /* QEMU_CONFIDENTIAL_GUEST_SUPPORT_H */
+diff --git a/target/i386/kvm/tdx.c b/target/i386/kvm/tdx.c
+index eadaa6da10..0dd27de46c 100644
+--- a/target/i386/kvm/tdx.c
++++ b/target/i386/kvm/tdx.c
+@@ -1231,6 +1231,9 @@ static void tdx_guest_init(Object *obj)
+                             tdx_guest_get_quote_generation,
+                             tdx_guest_set_quote_generation);
+ 
++    object_property_set_bool(obj, CONFIDENTIAL_GUEST_SUPPORT_DISABLE_PV_CLOCK,
++                             true, NULL);
++
+     tdx->event_notify_interrupt = -1;
+     tdx->event_notify_apic_id = -1;
+ }
+-- 
+2.39.2
+

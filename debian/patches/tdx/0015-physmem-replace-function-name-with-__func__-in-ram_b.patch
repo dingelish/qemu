@@ -1,0 +1,70 @@
+From 19babad730884f3dda8860fb755a01b3c83f115a Mon Sep 17 00:00:00 2001
+From: Zhu Lingshan <lingshan.zhu@intel.com>
+Date: Thu, 24 Aug 2023 01:45:05 +0800
+Subject: [PATCH 015/101] physmem: replace function name with __func__ in
+ ram_block_discard_range()
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ softmmu/physmem.c | 21 +++++++++------------
+ 1 file changed, 9 insertions(+), 12 deletions(-)
+
+diff --git a/softmmu/physmem.c b/softmmu/physmem.c
+index 50861989ab..91880b28bd 100644
+--- a/softmmu/physmem.c
++++ b/softmmu/physmem.c
+@@ -3402,16 +3402,15 @@ int ram_block_discard_range(RAMBlock *rb, uint64_t start, size_t length)
+     uint8_t *host_startaddr = rb->host + start;
+ 
+     if (!QEMU_PTR_IS_ALIGNED(host_startaddr, rb->page_size)) {
+-        error_report("ram_block_discard_range: Unaligned start address: %p",
+-                     host_startaddr);
++        error_report("%s: Unaligned start address: %p",
++                     __func__, host_startaddr);
+         goto err;
+     }
+ 
+     if ((start + length) <= rb->max_length) {
+         bool need_madvise, need_fallocate;
+         if (!QEMU_IS_ALIGNED(length, rb->page_size)) {
+-            error_report("ram_block_discard_range: Unaligned length: %zx",
+-                         length);
++            error_report("%s: Unaligned length: %zx", __func__, length);
+             goto err;
+         }
+ 
+@@ -3461,25 +3460,23 @@ int ram_block_discard_range(RAMBlock *rb, uint64_t start, size_t length)
+             }
+             if (ret) {
+                 ret = -errno;
+-                error_report("ram_block_discard_range: Failed to discard range "
++                error_report("%s: Failed to discard range "
+                              "%s:%" PRIx64 " +%zx (%d)",
+-                             rb->idstr, start, length, ret);
++                             __func__, rb->idstr, start, length, ret);
+                 goto err;
+             }
+ #else
+             ret = -ENOSYS;
+-            error_report("ram_block_discard_range: MADVISE not available"
+-                         "%s:%" PRIx64 " +%zx (%d)",
+-                         rb->idstr, start, length, ret);
++            error_report("%s: MADVISE not available %s:%" PRIx64 " +%zx (%d)",
++                         __func__, rb->idstr, start, length, ret);
+             goto err;
+ #endif
+         }
+         trace_ram_block_discard_range(rb->idstr, host_startaddr, length,
+                                       need_madvise, need_fallocate, ret);
+     } else {
+-        error_report("ram_block_discard_range: Overrun block '%s' (%" PRIu64
+-                     "/%zx/" RAM_ADDR_FMT")",
+-                     rb->idstr, start, length, rb->max_length);
++        error_report("%s: Overrun block '%s' (%" PRIu64 "/%zx/" RAM_ADDR_FMT")",
++                     __func__, rb->idstr, start, length, rb->max_length);
+     }
+ 
+ err:
+-- 
+2.39.2
+

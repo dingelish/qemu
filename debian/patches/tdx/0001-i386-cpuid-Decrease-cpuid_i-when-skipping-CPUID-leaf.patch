@@ -1,0 +1,30 @@
+From 7794c279701c15c7ab1aabdd656ccbd9fda45d5c Mon Sep 17 00:00:00 2001
+From: Xiaoyao Li <xiaoyao.li@intel.com>
+Date: Mon, 11 Jul 2022 16:26:47 +0800
+Subject: [PATCH 001/101] i386/cpuid: Decrease cpuid_i when skipping CPUID leaf
+ 1F
+
+Decrease array index cpuid_i when CPUID leaf 1F is skipped, otherwise it
+will get an all zero'ed CPUID entry with leaf 0 and subleaf 0. It
+conflicts with correct leaf 0.
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ target/i386/kvm/kvm.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/target/i386/kvm/kvm.c b/target/i386/kvm/kvm.c
+index de531842f6..afa97799d8 100644
+--- a/target/i386/kvm/kvm.c
++++ b/target/i386/kvm/kvm.c
+@@ -1956,6 +1956,7 @@ int kvm_arch_init_vcpu(CPUState *cs)
+         }
+         case 0x1f:
+             if (env->nr_dies < 2) {
++                cpuid_i--;
+                 break;
+             }
+             /* fallthrough */
+-- 
+2.39.2
+

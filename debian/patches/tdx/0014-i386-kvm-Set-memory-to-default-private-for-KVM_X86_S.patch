@@ -1,0 +1,26 @@
+From e2a8eebf9963adcc7bf1d084fceddb99ecf46fd9 Mon Sep 17 00:00:00 2001
+From: Xiaoyao Li <xiaoyao.li@intel.com>
+Date: Fri, 21 Jul 2023 01:26:54 -0400
+Subject: [PATCH 014/101] i386/kvm: Set memory to default private for
+ KVM_X86_SW_PROTECTED_VM
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ target/i386/kvm/kvm.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/target/i386/kvm/kvm.c b/target/i386/kvm/kvm.c
+index c03c95b060..8b1e718305 100644
+--- a/target/i386/kvm/kvm.c
++++ b/target/i386/kvm/kvm.c
+@@ -2610,6 +2610,7 @@ static void kvm_x86_sw_protected_vm_region_add(MemoryListener *listenr,
+             exit(1);
+         }
+         memory_region_set_gmem_fd(mr, fd);
++        memory_region_set_default_private(mr);
+     }
+ }
+ 
+-- 
+2.39.2
+

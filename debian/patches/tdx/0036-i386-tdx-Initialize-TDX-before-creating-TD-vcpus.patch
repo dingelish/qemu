@@ -1,0 +1,176 @@
+From f6126bcf7dd24a07355c5d62fbca1ed367f0a278 Mon Sep 17 00:00:00 2001
+From: Xiaoyao Li <xiaoyao.li@intel.com>
+Date: Wed, 8 Dec 2021 15:32:10 +0800
+Subject: [PATCH 036/101] i386/tdx: Initialize TDX before creating TD vcpus
+
+Invoke KVM_TDX_INIT in kvm_arch_pre_create_vcpu() that KVM_TDX_INIT
+configures global TD state, e.g. the canonical CPUID config, and must
+be executed prior to creating vCPUs.
+
+Use kvm_x86_arch_cpuid() to setup the CPUID settings for TDX VM and
+tie x86cpu->enable_pmu with TD's attributes.
+
+Note, this doesn't address the fact that QEMU may change the CPUID
+configuration when creating vCPUs, i.e. punts on refactoring QEMU to
+provide a stable CPUID config prior to kvm_arch_init().
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+Acked-by: Gerd Hoffmann <kraxel@redhat.com>
+---
+ accel/kvm/kvm-all.c        |  9 ++++++++-
+ target/i386/kvm/kvm.c      |  8 ++++++++
+ target/i386/kvm/tdx-stub.c |  5 +++++
+ target/i386/kvm/tdx.c      | 41 ++++++++++++++++++++++++++++++++++++++
+ target/i386/kvm/tdx.h      |  4 ++++
+ 5 files changed, 66 insertions(+), 1 deletion(-)
+
+diff --git a/accel/kvm/kvm-all.c b/accel/kvm/kvm-all.c
+index da73950936..d80b1acb6e 100644
+--- a/accel/kvm/kvm-all.c
++++ b/accel/kvm/kvm-all.c
+@@ -435,10 +435,17 @@ int kvm_init_vcpu(CPUState *cpu, Error **errp)
+ 
+     trace_kvm_init_vcpu(cpu->cpu_index, kvm_arch_vcpu_id(cpu));
+ 
++    /*
++     * tdx_pre_create_vcpu() may call cpu_x86_cpuid(). It in turn may call
++     * kvm_vm_ioctl(). Set cpu->kvm_state in advance to avoid NULL pointer
++     * dereference.
++     */
++    cpu->kvm_state = s;
+     ret = kvm_arch_pre_create_vcpu(cpu);
+     if (ret < 0) {
+         error_setg_errno(errp, -ret,
+                          "kvm_init_vcpu: kvm_arch_pre_create_vcpu() failed");
++        cpu->kvm_state = NULL;
+         goto err;
+     }
+ 
+@@ -446,11 +453,11 @@ int kvm_init_vcpu(CPUState *cpu, Error **errp)
+     if (ret < 0) {
+         error_setg_errno(errp, -ret, "kvm_init_vcpu: kvm_get_vcpu failed (%lu)",
+                          kvm_arch_vcpu_id(cpu));
++        cpu->kvm_state = NULL;
+         goto err;
+     }
+ 
+     cpu->kvm_fd = ret;
+-    cpu->kvm_state = s;
+     cpu->vcpu_dirty = true;
+     cpu->dirty_pages = 0;
+     cpu->throttle_us_per_full = 0;
+diff --git a/target/i386/kvm/kvm.c b/target/i386/kvm/kvm.c
+index 075142de4d..e48dd5023a 100644
+--- a/target/i386/kvm/kvm.c
++++ b/target/i386/kvm/kvm.c
+@@ -2327,6 +2327,14 @@ int kvm_arch_init_vcpu(CPUState *cs)
+     return r;
+ }
+ 
++int kvm_arch_pre_create_vcpu(CPUState *cpu)
++{
++    if (is_tdx_vm())
++        return tdx_pre_create_vcpu(cpu);
++
++    return 0;
++}
++
+ int kvm_arch_destroy_vcpu(CPUState *cs)
+ {
+     X86CPU *cpu = X86_CPU(cs);
+diff --git a/target/i386/kvm/tdx-stub.c b/target/i386/kvm/tdx-stub.c
+index 1d866d5496..61f70cc0d1 100644
+--- a/target/i386/kvm/tdx-stub.c
++++ b/target/i386/kvm/tdx-stub.c
+@@ -6,3 +6,8 @@ int tdx_kvm_init(MachineState *ms, Error **errp)
+ {
+     return -EINVAL;
+ }
++
++int tdx_pre_create_vcpu(CPUState *cpu)
++{
++    return -EINVAL;
++}
+diff --git a/target/i386/kvm/tdx.c b/target/i386/kvm/tdx.c
+index 29f50fb952..849f269fa0 100644
+--- a/target/i386/kvm/tdx.c
++++ b/target/i386/kvm/tdx.c
+@@ -458,6 +458,45 @@ int tdx_kvm_init(MachineState *ms, Error **errp)
+     return 0;
+ }
+ 
++int tdx_pre_create_vcpu(CPUState *cpu)
++{
++    MachineState *ms = MACHINE(qdev_get_machine());
++    X86CPU *x86cpu = X86_CPU(cpu);
++    CPUX86State *env = &x86cpu->env;
++    struct kvm_tdx_init_vm init_vm;
++    int r = 0;
++
++    qemu_mutex_lock(&tdx_guest->lock);
++    if (tdx_guest->initialized) {
++        goto out;
++    }
++
++    r = kvm_vm_enable_cap(kvm_state, KVM_CAP_MAX_VCPUS, 0, ms->smp.cpus);
++    if (r < 0) {
++        error_report("Unable to set MAX VCPUS to %d", ms->smp.cpus);
++        goto out;
++    }
++
++    memset(&init_vm, 0, sizeof(init_vm));
++    init_vm.cpuid.nent = kvm_x86_arch_cpuid(env, init_vm.cpuid.entries, 0);
++
++    init_vm.attributes = tdx_guest->attributes;
++
++    do {
++        r = tdx_vm_ioctl(KVM_TDX_INIT_VM, 0, &init_vm);
++    } while (r == -EAGAIN);
++    if (r < 0) {
++        error_report("KVM_TDX_INIT_VM failed %s", strerror(-r));
++        goto out;
++    }
++
++    tdx_guest->initialized = true;
++
++out:
++    qemu_mutex_unlock(&tdx_guest->lock);
++    return r;
++}
++
+ /* tdx guest */
+ OBJECT_DEFINE_TYPE_WITH_INTERFACES(TdxGuest,
+                                    tdx_guest,
+@@ -470,6 +509,8 @@ static void tdx_guest_init(Object *obj)
+ {
+     TdxGuest *tdx = TDX_GUEST(obj);
+ 
++    qemu_mutex_init(&tdx->lock);
++
+     tdx->attributes = 0;
+ }
+ 
+diff --git a/target/i386/kvm/tdx.h b/target/i386/kvm/tdx.h
+index 06599b65b8..46a24ee8c7 100644
+--- a/target/i386/kvm/tdx.h
++++ b/target/i386/kvm/tdx.h
+@@ -17,6 +17,9 @@ typedef struct TdxGuestClass {
+ typedef struct TdxGuest {
+     ConfidentialGuestSupport parent_obj;
+ 
++    QemuMutex lock;
++
++    bool initialized;
+     uint64_t attributes;    /* TD attributes */
+ } TdxGuest;
+ 
+@@ -29,5 +32,6 @@ bool is_tdx_vm(void);
+ int tdx_kvm_init(MachineState *ms, Error **errp);
+ void tdx_get_supported_cpuid(uint32_t function, uint32_t index, int reg,
+                              uint32_t *ret);
++int tdx_pre_create_vcpu(CPUState *cpu);
+ 
+ #endif /* QEMU_I386_TDX_H */
+-- 
+2.39.2
+

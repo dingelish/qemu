@@ -1,0 +1,45 @@
+From cbccfbf218027ada9ae966507c923d56f7a75873 Mon Sep 17 00:00:00 2001
+From: Xiaoyao Li <xiaoyao.li@intel.com>
+Date: Fri, 30 Jul 2021 17:06:23 +0800
+Subject: [PATCH 087/101] i386/cpu: Expose mark_unavailable_features() for TDX
+
+Expose mark_unavailable_features() out of cpu.c so that it can be used
+by TDX when features are masked off.
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ target/i386/cpu.c | 4 ++--
+ target/i386/cpu.h | 2 ++
+ 2 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index e1c6999c98..a8d1ec8b07 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -4387,8 +4387,8 @@ static bool x86_cpu_have_filtered_features(X86CPU *cpu)
+     return false;
+ }
+ 
+-static void mark_unavailable_features(X86CPU *cpu, FeatureWord w, uint64_t mask,
+-                                      const char *verbose_prefix)
++void mark_unavailable_features(X86CPU *cpu, FeatureWord w, uint64_t mask,
++                               const char *verbose_prefix)
+ {
+     CPUX86State *env = &cpu->env;
+     FeatureWordInfo *f = &feature_word_info[w];
+diff --git a/target/i386/cpu.h b/target/i386/cpu.h
+index 7eb3a821fb..708707678c 100644
+--- a/target/i386/cpu.h
++++ b/target/i386/cpu.h
+@@ -2179,6 +2179,8 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
+ void cpu_clear_apic_feature(CPUX86State *env);
+ void host_cpuid(uint32_t function, uint32_t count,
+                 uint32_t *eax, uint32_t *ebx, uint32_t *ecx, uint32_t *edx);
++void mark_unavailable_features(X86CPU *cpu, FeatureWord w, uint64_t mask,
++                               const char *verbose_prefix);
+ 
+ /* helper.c */
+ void x86_cpu_set_a20(X86CPU *cpu, int a20_state);
+-- 
+2.39.2
+

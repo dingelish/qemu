@@ -1,0 +1,39 @@
+From 09eac6258aae1dc2317d1361c2ce4842b84d4456 Mon Sep 17 00:00:00 2001
+From: Chenyi Qiang <chenyi.qiang@intel.com>
+Date: Fri, 30 Jul 2021 17:06:32 +0800
+Subject: [PATCH 091/101] i386/cpu: Don't clear CPUID_PDCM for TD guest
+
+tdx_fixed0/1 only tracks the setting in env->features[]. cpu_x86_cpuid is
+called to construct the cpuid_data. It will do some adjustment based on
+env->features, which could break the existing tdx_fixed0/1.
+
+Avoid clearing CPUID_PDCM when pmu is disabled and TDX is enabled.
+
+Signed-off-by: Chenyi Qiang <chenyi.qiang@intel.com>
+---
+ target/i386/cpu.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index 412c7e2643..de6de7cf35 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -5386,6 +5386,15 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
+             *ebx |= (cs->nr_cores * cs->nr_threads) << 16;
+             *edx |= CPUID_HT;
+         }
++        /*
++         * tdx_fixed0/1 are only reflected in env->features[].
++         * Avoid breaking the tdx_fixed when pmu is disabled and TDX is enabled
++         */
++#ifndef CONFIG_USER_ONLY
++        if (is_tdx_vm()) {
++            break;
++        }
++#endif
+         if (!cpu->enable_pmu) {
+             *ecx &= ~CPUID_EXT_PDCM;
+         }
+-- 
+2.39.2
+

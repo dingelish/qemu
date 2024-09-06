@@ -1,0 +1,92 @@
+From d0dc5e490efc133b767b2bf74a642e614c0ede8d Mon Sep 17 00:00:00 2001
+From: Xiaoyao Li <xiaoyao.li@intel.com>
+Date: Thu, 26 May 2022 11:36:41 +0800
+Subject: [PATCH 038/101] i386/tdx: Add property sept-ve-disable for tdx-guest
+ object
+
+Bit 28 of TD attribute, named SEPT_VE_DISABLE. When set to 1, it disables
+EPT violation conversion to #VE on guest TD access of PENDING pages.
+
+Some guest OS (e.g., Linux TD guest) may require this bit as 1.
+Otherwise refuse to boot.
+
+Add sept-ve-disable property for tdx-guest object, for user to configure
+this bit.
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+Acked-by: Gerd Hoffmann <kraxel@redhat.com>
+---
+ qapi/qom.json         |  4 +++-
+ target/i386/kvm/tdx.c | 24 ++++++++++++++++++++++++
+ 2 files changed, 27 insertions(+), 1 deletion(-)
+
+diff --git a/qapi/qom.json b/qapi/qom.json
+index a2b7c5b5a3..e137c3926c 100644
+--- a/qapi/qom.json
++++ b/qapi/qom.json
+@@ -849,10 +849,12 @@
+ #
+ # Properties for tdx-guest objects.
+ #
++# @sept-ve-disable: bit 28 of TD attributes (default: 0)
++#
+ # Since: 8.2
+ ##
+ { 'struct': 'TdxGuestProperties',
+-  'data': { }}
++  'data': { '*sept-ve-disable': 'bool' } }
+ 
+ ##
+ # @ThreadContextProperties:
+diff --git a/target/i386/kvm/tdx.c b/target/i386/kvm/tdx.c
+index 4f9565bba1..e2dbd2e520 100644
+--- a/target/i386/kvm/tdx.c
++++ b/target/i386/kvm/tdx.c
+@@ -32,6 +32,8 @@
+                                      (1U << KVM_FEATURE_PV_SCHED_YIELD) | \
+                                      (1U << KVM_FEATURE_MSI_EXT_DEST_ID))
+ 
++#define TDX_TD_ATTRIBUTES_SEPT_VE_DISABLE   BIT_ULL(28)
++
+ #define TDX_ATTRIBUTES_MAX_BITS      64
+ 
+ static FeatureMask tdx_attrs_ctrl_fields[TDX_ATTRIBUTES_MAX_BITS] = {
+@@ -500,6 +502,24 @@ out:
+     return r;
+ }
+ 
++static bool tdx_guest_get_sept_ve_disable(Object *obj, Error **errp)
++{
++    TdxGuest *tdx = TDX_GUEST(obj);
++
++    return !!(tdx->attributes & TDX_TD_ATTRIBUTES_SEPT_VE_DISABLE);
++}
++
++static void tdx_guest_set_sept_ve_disable(Object *obj, bool value, Error **errp)
++{
++    TdxGuest *tdx = TDX_GUEST(obj);
++
++    if (value) {
++        tdx->attributes |= TDX_TD_ATTRIBUTES_SEPT_VE_DISABLE;
++    } else {
++        tdx->attributes &= ~TDX_TD_ATTRIBUTES_SEPT_VE_DISABLE;
++    }
++}
++
+ /* tdx guest */
+ OBJECT_DEFINE_TYPE_WITH_INTERFACES(TdxGuest,
+                                    tdx_guest,
+@@ -515,6 +535,10 @@ static void tdx_guest_init(Object *obj)
+     qemu_mutex_init(&tdx->lock);
+ 
+     tdx->attributes = 0;
++
++    object_property_add_bool(obj, "sept-ve-disable",
++                             tdx_guest_get_sept_ve_disable,
++                             tdx_guest_set_sept_ve_disable);
+ }
+ 
+ static void tdx_guest_finalize(Object *obj)
+-- 
+2.39.2
+

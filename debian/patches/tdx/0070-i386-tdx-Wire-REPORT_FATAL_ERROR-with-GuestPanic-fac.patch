@@ -1,0 +1,181 @@
+From 82abba8ffb6d65f2a3afeef37a4961fcebb7944f Mon Sep 17 00:00:00 2001
+From: Zhu Lingshan <lingshan.zhu@intel.com>
+Date: Thu, 24 Aug 2023 23:35:29 +0800
+Subject: [PATCH 070/101] i386/tdx: Wire REPORT_FATAL_ERROR with GuestPanic
+ facility
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ qapi/run-state.json   | 20 +++++++++++++++---
+ softmmu/runstate.c    | 49 +++++++++++++++++++++++++++++++++++++++++++
+ target/i386/kvm/tdx.c | 24 ++++++++++++++++++++-
+ 3 files changed, 89 insertions(+), 4 deletions(-)
+
+diff --git a/qapi/run-state.json b/qapi/run-state.json
+index 419c188dd1..8f6d0d3cd9 100644
+--- a/qapi/run-state.json
++++ b/qapi/run-state.json
+@@ -485,7 +485,7 @@
+ # Since: 2.9
+ ##
+ { 'enum': 'GuestPanicInformationType',
+-  'data': [ 'hyper-v', 's390' ] }
++  'data': [ 'hyper-v', 's390', 'tdx' ] }
+ 
+ ##
+ # @GuestPanicInformation:
+@@ -500,7 +500,9 @@
+  'base': {'type': 'GuestPanicInformationType'},
+  'discriminator': 'type',
+  'data': { 'hyper-v': 'GuestPanicInformationHyperV',
+-           's390': 'GuestPanicInformationS390' } }
++           's390': 'GuestPanicInformationS390',
++           'tdx' : 'GuestPanicInformationTdx'}}
++ 
+ 
+ ##
+ # @GuestPanicInformationHyperV:
+@@ -560,6 +562,18 @@
+            'psw-addr': 'uint64',
+            'reason': 'S390CrashReason' } }
+ 
++##
++# @GuestPanicInformationTdx:
++#
++# TDX GHCI TDG.VP.VMCALL<ReportFatalError> specific guest panic information
++#
++# Since: 8.2
++##
++{'struct': 'GuestPanicInformationTdx',
++ 'data': {'error-code': 'uint64',
++          'gpa': 'uint64',
++          'message': 'str'}}
++
+ ##
+ # @MEMORY_FAILURE:
+ #
+@@ -663,4 +677,4 @@
+ # Since: 7.2
+ ##
+ { 'enum': 'NotifyVmexitOption',
+-  'data': [ 'run', 'internal-error', 'disable' ] }
+\ No newline at end of file
++  'data': [ 'run', 'internal-error', 'disable' ] }
+diff --git a/softmmu/runstate.c b/softmmu/runstate.c
+index 3359aafa08..e93819a440 100644
+--- a/softmmu/runstate.c
++++ b/softmmu/runstate.c
+@@ -511,7 +511,56 @@ void qemu_system_guest_panicked(GuestPanicInformation *info)
+                           S390CrashReason_str(info->u.s390.reason),
+                           info->u.s390.psw_mask,
+                           info->u.s390.psw_addr);
++        } else if (info->type == GUEST_PANIC_INFORMATION_TYPE_TDX) {
++            char *buf = NULL;
++            bool printable = false;
++
++            /*
++             * Although message is defined as a json string, we shouldn't
++             * unconditionally treat it as is because the guest generated it and
++             * it's not necessarily trustable.
++             */
++            if (info->u.tdx.message) {
++                /* The caller guarantees the NUL-terminated string. */
++                int len = strlen(info->u.tdx.message);
++                int i;
++
++                printable = len > 0;
++                for (i = 0; i < len; i++) {
++                    if (!(0x20 <= info->u.tdx.message[i] &&
++                          info->u.tdx.message[i] <= 0x7e)) {
++                        printable = false;
++                        break;
++                    }
++                }
++
++                /* 3 = length of "%02x " */
++                buf = g_malloc(len * 3);
++                for (i = 0; i < len; i++) {
++                    if (info->u.tdx.message[i] == '\0') {
++                        break;
++                    } else {
++                        sprintf(buf + 3 * i, "%02x ", info->u.tdx.message[i]);
++                    }
++                }
++                if (i > 0)
++                    /* replace the last ' '(space) to NUL */
++                    buf[i * 3 - 1] = '\0';
++                else
++                    buf[0] = '\0';
++            }
++
++            qemu_log_mask(LOG_GUEST_ERROR,
++                          //" TDX report fatal error:\"%s\" %s",
++                          " TDX report fatal error:\"%s\""
++                          "error: 0x%016" PRIx64 " gpa page: 0x%016" PRIx64 "\n",
++                          printable ? info->u.tdx.message : "",
++                          //buf ? buf : "",
++                          info->u.tdx.error_code,
++                          info->u.tdx.gpa);
++            g_free(buf);
+         }
++
+         qapi_free_GuestPanicInformation(info);
+     }
+ }
+diff --git a/target/i386/kvm/tdx.c b/target/i386/kvm/tdx.c
+index 663b0e245d..58036da1ee 100644
+--- a/target/i386/kvm/tdx.c
++++ b/target/i386/kvm/tdx.c
+@@ -18,6 +18,7 @@
+ #include "qom/object_interfaces.h"
+ #include "standard-headers/asm-x86/kvm_para.h"
+ #include "sysemu/kvm.h"
++#include "sysemu/runstate.h"
+ #include "sysemu/sysemu.h"
+ #include "exec/address-spaces.h"
+ #include "exec/ramblock.h"
+@@ -1408,11 +1409,26 @@ static void tdx_handle_get_quote(X86CPU *cpu, struct kvm_tdx_vmcall *vmcall)
+     vmcall->status_code = TDG_VP_VMCALL_SUCCESS;
+ }
+ 
++static void tdx_panicked_on_fatal_error(X86CPU *cpu, uint64_t error_code,
++                                        uint64_t gpa, char *message)
++{
++    GuestPanicInformation *panic_info;
++
++    panic_info = g_new0(GuestPanicInformation, 1);
++    panic_info->type = GUEST_PANIC_INFORMATION_TYPE_TDX;
++    panic_info->u.tdx.error_code = error_code;
++    panic_info->u.tdx.gpa = gpa;
++    panic_info->u.tdx.message = (char *)message;
++
++    qemu_system_guest_panicked(panic_info);
++}
++
+ static void tdx_handle_report_fatal_error(X86CPU *cpu,
+                                           struct kvm_tdx_vmcall *vmcall)
+ {
+     uint64_t error_code = vmcall->in_r12;
+     char *message = NULL;
++    uint64_t gpa = -1ull;
+ 
+     if (error_code & 0xffff) {
+         error_report("invalid error code of TDG.VP.VMCALL<REPORT_FATAL_ERROR>\n");
+@@ -1441,7 +1457,13 @@ static void tdx_handle_report_fatal_error(X86CPU *cpu,
+     }
+ 
+     error_report("TD guest reports fatal error. %s\n", message ? : "");
+-    exit(1);
++
++#define TDX_REPORT_FATAL_ERROR_GPA_VALID    BIT_ULL(63)
++    if (error_code & TDX_REPORT_FATAL_ERROR_GPA_VALID) {
++	gpa = vmcall->in_r13;
++    }
++
++    tdx_panicked_on_fatal_error(cpu, error_code, gpa, message);
+ }
+ 
+ static void tdx_handle_setup_event_notify_interrupt(X86CPU *cpu,
+-- 
+2.39.2
+

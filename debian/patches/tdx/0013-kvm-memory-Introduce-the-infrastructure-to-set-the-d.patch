@@ -1,0 +1,89 @@
+From 0b329a5e08b5d286edd90baeaea7878c12db27ff Mon Sep 17 00:00:00 2001
+From: Zhu Lingshan <lingshan.zhu@intel.com>
+Date: Thu, 24 Aug 2023 01:38:43 +0800
+Subject: [PATCH 013/101] kvm/memory: Introduce the infrastructure to set the
+ default shared/private value
+
+Introduce new flags for MemoryRegion to indicate the default attribute,
+private or not. And update the attribute if default private.
+
+Originated-from: Isaku Yamahata <isaku.yamahata@intel.com>
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ accel/kvm/kvm-all.c   | 10 ++++++++++
+ include/exec/memory.h |  6 ++++++
+ softmmu/memory.c      | 13 +++++++++++++
+ 3 files changed, 29 insertions(+)
+
+diff --git a/accel/kvm/kvm-all.c b/accel/kvm/kvm-all.c
+index 4bfffbb1de..6cad3fc99e 100644
+--- a/accel/kvm/kvm-all.c
++++ b/accel/kvm/kvm-all.c
+@@ -1480,6 +1480,16 @@ static void kvm_set_phys_mem(KVMMemoryListener *kml,
+                     strerror(-err));
+             abort();
+         }
++
++        if (memory_region_is_default_private(mr)) {
++            err = kvm_set_memory_attributes_private(start_addr, slot_size);
++            if (err) {
++                error_report("%s: failed to set memory attribute private: %s\n",
++                             __func__, strerror(-err));
++                exit(1);
++            }
++        }
++
+         start_addr += slot_size;
+         ram_start_offset += slot_size;
+         ram += slot_size;
+diff --git a/include/exec/memory.h b/include/exec/memory.h
+index 5f4f820047..064e4ba508 100644
+--- a/include/exec/memory.h
++++ b/include/exec/memory.h
+@@ -232,6 +232,9 @@ typedef struct IOMMUTLBEvent {
+ /* RAM that isn't accessible through normal means. */
+ #define RAM_PROTECTED (1 << 8)
+ 
++/* RAM is default private */
++#define RAM_DEFAULT_PRIVATE     (1 << 10)
++
+ static inline void iommu_notifier_init(IOMMUNotifier *n, IOMMUNotify fn,
+                                        IOMMUNotifierFlag flags,
+                                        hwaddr start, hwaddr end,
+@@ -1671,6 +1674,9 @@ bool memory_region_is_protected(MemoryRegion *mr);
+  */
+ bool memory_region_can_be_private(MemoryRegion *mr);
+ 
++void memory_region_set_default_private(MemoryRegion *mr);
++bool memory_region_is_default_private(MemoryRegion *mr);
++
+ /**
+  * memory_region_get_iommu: check whether a memory region is an iommu
+  *
+diff --git a/softmmu/memory.c b/softmmu/memory.c
+index 12c3ede925..b6da0f93ae 100644
+--- a/softmmu/memory.c
++++ b/softmmu/memory.c
+@@ -1841,6 +1841,19 @@ bool memory_region_can_be_private(MemoryRegion *mr)
+     return mr->ram_block && mr->ram_block->gmem_fd >= 0;
+ }
+ 
++bool memory_region_is_default_private(MemoryRegion *mr)
++{
++    return mr->ram_block && mr->ram_block->gmem_fd >= 0 &&
++        (mr->ram_block->flags & RAM_DEFAULT_PRIVATE);
++}
++
++void memory_region_set_default_private(MemoryRegion *mr)
++{
++    if (mr->ram_block && mr->ram_block->gmem_fd >= 0) {
++        mr->ram_block->flags |= RAM_DEFAULT_PRIVATE;
++    }
++}
++
+ uint8_t memory_region_get_dirty_log_mask(MemoryRegion *mr)
+ {
+     uint8_t mask = mr->dirty_log_mask;
+-- 
+2.39.2
+

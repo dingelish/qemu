@@ -1,0 +1,50 @@
+From bd46ceabeffdfa6c3ca85a8d4ca62fd3c58ee007 Mon Sep 17 00:00:00 2001
+From: Xiaoyao Li <xiaoyao.li@intel.com>
+Date: Fri, 2 Jun 2023 18:36:51 -0700
+Subject: [PATCH 006/101] memory: Introduce memory_region_can_be_private()
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ include/exec/memory.h | 9 +++++++++
+ softmmu/memory.c      | 5 +++++
+ 2 files changed, 14 insertions(+)
+
+diff --git a/include/exec/memory.h b/include/exec/memory.h
+index ad01478a9b..5f4f820047 100644
+--- a/include/exec/memory.h
++++ b/include/exec/memory.h
+@@ -1662,6 +1662,15 @@ static inline bool memory_region_is_romd(MemoryRegion *mr)
+  */
+ bool memory_region_is_protected(MemoryRegion *mr);
+ 
++/**
++ * memory_region_can_be_private: check whether a memory region can be private
++ *
++ * Returns %true if a memory region's ram_block has valid gmem fd assigned.
++ *
++ * @mr: the memory region being queried
++ */
++bool memory_region_can_be_private(MemoryRegion *mr);
++
+ /**
+  * memory_region_get_iommu: check whether a memory region is an iommu
+  *
+diff --git a/softmmu/memory.c b/softmmu/memory.c
+index 75576477c3..12c3ede925 100644
+--- a/softmmu/memory.c
++++ b/softmmu/memory.c
+@@ -1836,6 +1836,11 @@ bool memory_region_is_protected(MemoryRegion *mr)
+     return mr->ram && (mr->ram_block->flags & RAM_PROTECTED);
+ }
+ 
++bool memory_region_can_be_private(MemoryRegion *mr)
++{
++    return mr->ram_block && mr->ram_block->gmem_fd >= 0;
++}
++
+ uint8_t memory_region_get_dirty_log_mask(MemoryRegion *mr)
+ {
+     uint8_t mask = mr->dirty_log_mask;
+-- 
+2.39.2
+

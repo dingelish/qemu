@@ -1,0 +1,38 @@
+From 826d098e491b353dae7443ef741119f318b40160 Mon Sep 17 00:00:00 2001
+From: Zhu Lingshan <lingshan.zhu@intel.com>
+Date: Fri, 25 Aug 2023 02:38:26 +0800
+Subject: [PATCH 100/101] linux-headers/kvm: Bump up KVM_CAP_MEMORY_ATTRIBUTES
+ KVM_CAP_USER_MEMORY2 and KVM_CAP_VM_TYPES
+
+... to align with kvm-upstream-workaround branch.
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ linux-headers/linux/kvm.h | 11 ++++++++---
+ 1 file changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/linux-headers/linux/kvm.h b/linux-headers/linux/kvm.h
+index 3557b1d0a0..129cdad3c8 100644
+--- a/linux-headers/linux/kvm.h
++++ b/linux-headers/linux/kvm.h
+@@ -1282,9 +1282,14 @@ struct kvm_ppc_resize_hpt {
+ #define KVM_CAP_DIRTY_LOG_RING_ACQ_REL 223
+ #define KVM_CAP_S390_PROTECTED_ASYNC_DISABLE 224
+ #define KVM_CAP_DIRTY_LOG_RING_WITH_BITMAP 225
+-#define KVM_CAP_USER_MEMORY2 230
+-#define KVM_CAP_MEMORY_ATTRIBUTES 231
+-#define KVM_CAP_VM_TYPES 232
++//#define KVM_CAP_USER_MEMORY2 230
++//#define KVM_CAP_MEMORY_ATTRIBUTES 231
++//#define KVM_CAP_VM_TYPES 232
++
++/* TODO: remove this workaround to avoid CAP number conflict in the upstream. */
++#define KVM_CAP_MEMORY_ATTRIBUTES 500
++#define KVM_CAP_USER_MEMORY2 750
++#define KVM_CAP_VM_TYPES 1000
+  
+ #ifdef KVM_CAP_IRQ_ROUTING
+ 
+-- 
+2.39.2
+

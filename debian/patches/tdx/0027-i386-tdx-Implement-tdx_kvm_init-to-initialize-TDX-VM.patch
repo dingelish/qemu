@@ -1,0 +1,124 @@
+From 7bd94b47b302b4ac0c56b8ab6919df1e25f9fa91 Mon Sep 17 00:00:00 2001
+From: Zhu Lingshan <lingshan.zhu@intel.com>
+Date: Thu, 24 Aug 2023 23:11:28 +0800
+Subject: [PATCH 027/101] i386/tdx: Implement tdx_kvm_init() to initialize TDX
+ VM context
+
+Introduce tdx_kvm_init() and invoke it in kvm_confidential_guest_init()
+if it's a TDX VM. More initialization will be added later.
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+Acked-by: Gerd Hoffmann <kraxel@redhat.com>
+---
+ target/i386/kvm/kvm.c       | 15 ++++++---------
+ target/i386/kvm/meson.build |  2 +-
+ target/i386/kvm/tdx-stub.c  |  8 ++++++++
+ target/i386/kvm/tdx.c       |  7 +++++++
+ target/i386/kvm/tdx.h       |  2 ++
+ 5 files changed, 24 insertions(+), 10 deletions(-)
+ create mode 100644 target/i386/kvm/tdx-stub.c
+
+diff --git a/target/i386/kvm/kvm.c b/target/i386/kvm/kvm.c
+index 8f1b192fbc..f19be4c067 100644
+--- a/target/i386/kvm/kvm.c
++++ b/target/i386/kvm/kvm.c
+@@ -63,6 +63,7 @@
+ #include "migration/blocker.h"
+ #include "exec/memattrs.h"
+ #include "trace.h"
++#include "tdx.h"
+ 
+ #include CONFIG_DEVICES
+ 
+@@ -2633,6 +2634,8 @@ static int kvm_confidential_guest_init(MachineState *ms, Error **errp)
+ {
+     if (object_dynamic_cast(OBJECT(ms->cgs), TYPE_SEV_GUEST)) {
+         return sev_kvm_init(ms->cgs, errp);
++    } else if (object_dynamic_cast(OBJECT(ms->cgs), TYPE_TDX_GUEST)) {
++        return tdx_kvm_init(ms, errp);
+     }
+ 
+     return 0;
+@@ -2648,16 +2651,10 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
+     Error *local_err = NULL;
+ 
+     /*
+-     * Initialize SEV context, if required
+-     *
+-     * If no memory encryption is requested (ms->cgs == NULL) this is
+-     * a no-op.
++     * Initialize confidential guest (SEV/TDX) context, if required
+      *
+-     * It's also a no-op if a non-SEV confidential guest support
+-     * mechanism is selected.  SEV is the only mechanism available to
+-     * select on x86 at present, so this doesn't arise, but if new
+-     * mechanisms are supported in future (e.g. TDX), they'll need
+-     * their own initialization either here or elsewhere.
++     * It's a no-op if a non-SEV/non-tdx confidential guest support
++     * mechanism is selected, i.e., ms->cgs == NULL
+      */
+     ret = kvm_confidential_guest_init(ms, &local_err);
+     if (ret < 0) {
+diff --git a/target/i386/kvm/meson.build b/target/i386/kvm/meson.build
+index 6b3526a447..72a0d8dc1c 100644
+--- a/target/i386/kvm/meson.build
++++ b/target/i386/kvm/meson.build
+@@ -11,7 +11,7 @@ i386_softmmu_kvm_ss.add(when: 'CONFIG_XEN_EMU', if_true: files('xen-emu.c'))
+ 
+ i386_softmmu_kvm_ss.add(when: 'CONFIG_SEV', if_false: files('sev-stub.c'))
+ 
+-i386_softmmu_kvm_ss.add(when: 'CONFIG_TDX', if_true: files('tdx.c'))
++i386_softmmu_kvm_ss.add(when: 'CONFIG_TDX', if_true: files('tdx.c'), if_false: files('tdx-stub.c'))
+ 
+ i386_softmmu_ss.add(when: 'CONFIG_HYPERV', if_true: files('hyperv.c'), if_false: files('hyperv-stub.c'))
+ 
+diff --git a/target/i386/kvm/tdx-stub.c b/target/i386/kvm/tdx-stub.c
+new file mode 100644
+index 0000000000..1d866d5496
+--- /dev/null
++++ b/target/i386/kvm/tdx-stub.c
+@@ -0,0 +1,8 @@
++#include "qemu/osdep.h"
++
++#include "tdx.h"
++
++int tdx_kvm_init(MachineState *ms, Error **errp)
++{
++    return -EINVAL;
++}
+diff --git a/target/i386/kvm/tdx.c b/target/i386/kvm/tdx.c
+index d3792d4a3d..77e33ae011 100644
+--- a/target/i386/kvm/tdx.c
++++ b/target/i386/kvm/tdx.c
+@@ -12,10 +12,17 @@
+  */
+ 
+ #include "qemu/osdep.h"
++#include "qapi/error.h"
+ #include "qom/object_interfaces.h"
+ 
++#include "hw/i386/x86.h"
+ #include "tdx.h"
+ 
++int tdx_kvm_init(MachineState *ms, Error **errp)
++{
++    return 0;
++}
++
+ /* tdx guest */
+ OBJECT_DEFINE_TYPE_WITH_INTERFACES(TdxGuest,
+                                    tdx_guest,
+diff --git a/target/i386/kvm/tdx.h b/target/i386/kvm/tdx.h
+index 415aeb5af7..c8a23d9525 100644
+--- a/target/i386/kvm/tdx.h
++++ b/target/i386/kvm/tdx.h
+@@ -16,4 +16,6 @@ typedef struct TdxGuest {
+     uint64_t attributes;    /* TD attributes */
+ } TdxGuest;
+ 
++int tdx_kvm_init(MachineState *ms, Error **errp);
++
+ #endif /* QEMU_I386_TDX_H */
+-- 
+2.39.2
+

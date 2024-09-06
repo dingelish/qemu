@@ -1,0 +1,154 @@
+From aa8545d33abb859028b0a98fda3a3224da1d4b9f Mon Sep 17 00:00:00 2001
+From: Xiaoyao Li <xiaoyao.li@intel.com>
+Date: Tue, 7 Dec 2021 17:04:53 +0800
+Subject: [PATCH 009/101] target/i386: Implement mc->kvm_type() to get VM type
+
+Implement mc->kvm_type() for i386 machines. It provides a way for user
+to create SW_PROTECTE_VM.
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ hw/i386/x86.c              | 27 +++++++++++++++++++++++++++
+ include/hw/i386/x86.h      |  4 ++++
+ target/i386/kvm/kvm.c      | 38 ++++++++++++++++++++++++++++++++++++++
+ target/i386/kvm/kvm_i386.h |  1 +
+ 4 files changed, 70 insertions(+)
+
+diff --git a/hw/i386/x86.c b/hw/i386/x86.c
+index a88a126123..3ccd061542 100644
+--- a/hw/i386/x86.c
++++ b/hw/i386/x86.c
+@@ -1382,6 +1382,26 @@ static void machine_set_sgx_epc(Object *obj, Visitor *v, const char *name,
+     qapi_free_SgxEPCList(list);
+ }
+ 
++static int x86_kvm_type(MachineState *ms, const char *vm_type)
++{
++    return kvm_get_vm_type(ms, vm_type);
++}
++
++static char *x86_machine_get_kvm_type(Object *obj, Error **errp)
++{
++    X86MachineState *x86ms = X86_MACHINE(obj);
++
++    return g_strdup(x86ms->kvm_type);
++}
++
++static void x86_machine_set_kvm_type(Object *obj, const char *value, Error **errp)
++{
++    X86MachineState *x86ms = X86_MACHINE(obj);
++
++    g_free(x86ms->kvm_type);
++    x86ms->kvm_type = g_strdup(value);
++}
++
+ static void x86_machine_initfn(Object *obj)
+ {
+     X86MachineState *x86ms = X86_MACHINE(obj);
+@@ -1406,6 +1426,7 @@ static void x86_machine_class_init(ObjectClass *oc, void *data)
+     mc->cpu_index_to_instance_props = x86_cpu_index_to_props;
+     mc->get_default_cpu_node_id = x86_get_default_cpu_node_id;
+     mc->possible_cpu_arch_ids = x86_possible_cpu_arch_ids;
++    mc->kvm_type = x86_kvm_type;
+     x86mc->save_tsc_khz = true;
+     x86mc->fwcfg_dma_enabled = true;
+     nc->nmi_monitor_handler = x86_nmi;
+@@ -1464,6 +1485,12 @@ static void x86_machine_class_init(ObjectClass *oc, void *data)
+         NULL, NULL);
+     object_class_property_set_description(oc, "sgx-epc",
+         "SGX EPC device");
++
++    object_class_property_add_str(oc, X86_MACHINE_KVM_TYPE,
++                                  x86_machine_get_kvm_type,
++                                  x86_machine_set_kvm_type);
++    object_class_property_set_description(oc, X86_MACHINE_KVM_TYPE,
++                                          "KVM guest type (default, sw_protected_vm)");
+ }
+ 
+ static const TypeInfo x86_machine_info = {
+diff --git a/include/hw/i386/x86.h b/include/hw/i386/x86.h
+index da19ae1546..a3d03f78ce 100644
+--- a/include/hw/i386/x86.h
++++ b/include/hw/i386/x86.h
+@@ -42,6 +42,9 @@ struct X86MachineState {
+ 
+     /*< public >*/
+ 
++    char *kvm_type;
++    unsigned int vm_type;
++
+     /* Pointers to devices and objects: */
+     ISADevice *rtc;
+     FWCfgState *fw_cfg;
+@@ -91,6 +94,7 @@ struct X86MachineState {
+ #define X86_MACHINE_OEM_ID           "x-oem-id"
+ #define X86_MACHINE_OEM_TABLE_ID     "x-oem-table-id"
+ #define X86_MACHINE_BUS_LOCK_RATELIMIT  "bus-lock-ratelimit"
++#define X86_MACHINE_KVM_TYPE         "kvm-type"
+ 
+ #define TYPE_X86_MACHINE   MACHINE_TYPE_NAME("x86")
+ OBJECT_DECLARE_TYPE(X86MachineState, X86MachineClass, X86_MACHINE)
+diff --git a/target/i386/kvm/kvm.c b/target/i386/kvm/kvm.c
+index d7e235ce35..7f3d52bd6a 100644
+--- a/target/i386/kvm/kvm.c
++++ b/target/i386/kvm/kvm.c
+@@ -154,6 +154,44 @@ static KVMMSRHandlers msr_handlers[KVM_MSR_FILTER_MAX_RANGES];
+ static RateLimit bus_lock_ratelimit_ctrl;
+ static int kvm_get_one_msr(X86CPU *cpu, int index, uint64_t *value);
+ 
++static const char* vm_type_name[] = {
++    [KVM_X86_DEFAULT_VM] = "default",
++    [KVM_X86_SW_PROTECTED_VM] = "sw-protected-vm",
++};
++
++int kvm_get_vm_type(MachineState *ms, const char *vm_type)
++{
++    X86MachineState *x86ms = X86_MACHINE(ms);
++    int kvm_type = KVM_X86_DEFAULT_VM;
++
++    if (vm_type) {
++        if (!g_ascii_strcasecmp(vm_type, "default") || !g_ascii_strcasecmp(vm_type, "")) {
++            kvm_type = KVM_X86_DEFAULT_VM;
++        } else if (!g_ascii_strcasecmp(vm_type, "sw-protected-vm")) {
++            kvm_type = KVM_X86_SW_PROTECTED_VM;
++        } else {
++            error_report("Unknown kvm-type specified '%s'", vm_type);
++            exit(1);
++        }
++    }
++
++    /*
++     * old KVM doesn't support KVM_CAP_VM_TYPES and KVM_X86_DEFAULT_VM
++     * is always supported
++     */
++    if (kvm_type == KVM_X86_DEFAULT_VM) {
++        return kvm_type;
++    }
++
++    if (!(kvm_check_extension(KVM_STATE(ms->accelerator), KVM_CAP_VM_TYPES) & BIT(kvm_type))) {
++        error_report("vm-type %s not supported by KVM", vm_type_name[kvm_type]);
++        exit(1);
++    }
++
++    x86ms->vm_type = kvm_type;
++    return kvm_type;
++}
++
+ int kvm_has_pit_state2(void)
+ {
+     return has_pit_state2;
+diff --git a/target/i386/kvm/kvm_i386.h b/target/i386/kvm/kvm_i386.h
+index e24753abfe..ea3a5b174a 100644
+--- a/target/i386/kvm/kvm_i386.h
++++ b/target/i386/kvm/kvm_i386.h
+@@ -37,6 +37,7 @@ bool kvm_has_adjust_clock(void);
+ bool kvm_has_adjust_clock_stable(void);
+ bool kvm_has_exception_payload(void);
+ void kvm_synchronize_all_tsc(void);
++int kvm_get_vm_type(MachineState *ms, const char *vm_type);
+ void kvm_arch_reset_vcpu(X86CPU *cs);
+ void kvm_arch_after_reset_vcpu(X86CPU *cpu);
+ void kvm_arch_do_init_vcpu(X86CPU *cs);
+-- 
+2.39.2
+

@@ -1,0 +1,152 @@
+From f9d510448aabc871cf0c7ecdf6f87e528450a6de Mon Sep 17 00:00:00 2001
+From: Zhu Lingshan <lingshan.zhu@intel.com>
+Date: Thu, 24 Aug 2023 18:05:18 +0800
+Subject: [PATCH 021/101] q35: Introduce smm_ranges property for q35-pci-host
+
+Add a q35 property to check whether or not SMM ranges, e.g. SMRAM, TSEG,
+etc... exist for the target platform.  TDX doesn't support SMM and doesn't
+play nice with QEMU modifying related guest memory ranges.
+
+Signed-off-by: Isaku Yamahata <isaku.yamahata@linux.intel.com>
+Co-developed-by: Sean Christopherson <sean.j.christopherson@intel.com>
+Signed-off-by: Sean Christopherson <sean.j.christopherson@intel.com>
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+---
+ hw/i386/pc_q35.c          |  3 +++
+ hw/pci-host/q35.c         | 42 +++++++++++++++++++++++++++------------
+ include/hw/i386/pc.h      |  1 +
+ include/hw/pci-host/q35.h |  1 +
+ 4 files changed, 34 insertions(+), 13 deletions(-)
+
+diff --git a/hw/i386/pc_q35.c b/hw/i386/pc_q35.c
+index 797ba347fd..4eb1ea3419 100644
+--- a/hw/i386/pc_q35.c
++++ b/hw/i386/pc_q35.c
+@@ -231,6 +231,9 @@ static void pc_q35_init(MachineState *machine)
+                             x86ms->below_4g_mem_size, NULL);
+     object_property_set_int(OBJECT(q35_host), PCI_HOST_ABOVE_4G_MEM_SIZE,
+                             x86ms->above_4g_mem_size, NULL);
++    object_property_set_bool(OBJECT(q35_host), PCI_HOST_PROP_SMM_RANGES,
++                            x86_machine_is_smm_enabled(x86ms), NULL);
++
+     /* pci */
+     sysbus_realize_and_unref(SYS_BUS_DEVICE(q35_host), &error_fatal);
+     phb = PCI_HOST_BRIDGE(q35_host);
+diff --git a/hw/pci-host/q35.c b/hw/pci-host/q35.c
+index 2f2f556dc8..604e5f86c4 100644
+--- a/hw/pci-host/q35.c
++++ b/hw/pci-host/q35.c
+@@ -186,6 +186,8 @@ static Property q35_host_props[] = {
+                      mch.below_4g_mem_size, 0),
+     DEFINE_PROP_SIZE(PCI_HOST_ABOVE_4G_MEM_SIZE, Q35PCIHost,
+                      mch.above_4g_mem_size, 0),
++    DEFINE_PROP_BOOL(PCI_HOST_PROP_SMM_RANGES, Q35PCIHost,
++                     mch.has_smm_ranges, true),
+     DEFINE_PROP_BOOL("x-pci-hole64-fix", Q35PCIHost, pci_hole64_fix, true),
+     DEFINE_PROP_END_OF_LIST(),
+ };
+@@ -221,6 +223,7 @@ static void q35_host_initfn(Object *obj)
+     /* mch's object_initialize resets the default value, set it again */
+     qdev_prop_set_uint64(DEVICE(s), PCI_HOST_PROP_PCI_HOLE64_SIZE,
+                          Q35_PCI_HOST_HOLE64_SIZE_DEFAULT);
++
+     object_property_add(obj, PCI_HOST_PROP_PCI_HOLE_START, "uint32",
+                         q35_host_get_pci_hole_start,
+                         NULL, NULL, NULL);
+@@ -484,6 +487,10 @@ static void mch_write_config(PCIDevice *d,
+         mch_update_pciexbar(mch);
+     }
+ 
++    if (!mch->has_smm_ranges) {
++        return;
++    }
++
+     if (ranges_overlap(address, len, MCH_HOST_BRIDGE_SMRAM,
+                        MCH_HOST_BRIDGE_SMRAM_SIZE)) {
+         mch_update_smram(mch);
+@@ -502,10 +509,13 @@ static void mch_write_config(PCIDevice *d,
+ static void mch_update(MCHPCIState *mch)
+ {
+     mch_update_pciexbar(mch);
++
+     mch_update_pam(mch);
+-    mch_update_smram(mch);
+-    mch_update_ext_tseg_mbytes(mch);
+-    mch_update_smbase_smram(mch);
++    if (mch->has_smm_ranges) {
++        mch_update_smram(mch);
++        mch_update_ext_tseg_mbytes(mch);
++        mch_update_smbase_smram(mch);
++    }
+ 
+     /*
+      * pci hole goes from end-of-low-ram to io-apic.
+@@ -546,18 +556,20 @@ static void mch_reset(DeviceState *qdev)
+     pci_set_quad(d->config + MCH_HOST_BRIDGE_PCIEXBAR,
+                  MCH_HOST_BRIDGE_PCIEXBAR_DEFAULT);
+ 
+-    d->config[MCH_HOST_BRIDGE_SMRAM] = MCH_HOST_BRIDGE_SMRAM_DEFAULT;
+-    d->config[MCH_HOST_BRIDGE_ESMRAMC] = MCH_HOST_BRIDGE_ESMRAMC_DEFAULT;
+-    d->wmask[MCH_HOST_BRIDGE_SMRAM] = MCH_HOST_BRIDGE_SMRAM_WMASK;
+-    d->wmask[MCH_HOST_BRIDGE_ESMRAMC] = MCH_HOST_BRIDGE_ESMRAMC_WMASK;
++    if (mch->has_smm_ranges) {
++        d->config[MCH_HOST_BRIDGE_SMRAM] = MCH_HOST_BRIDGE_SMRAM_DEFAULT;
++        d->config[MCH_HOST_BRIDGE_ESMRAMC] = MCH_HOST_BRIDGE_ESMRAMC_DEFAULT;
++        d->wmask[MCH_HOST_BRIDGE_SMRAM] = MCH_HOST_BRIDGE_SMRAM_WMASK;
++        d->wmask[MCH_HOST_BRIDGE_ESMRAMC] = MCH_HOST_BRIDGE_ESMRAMC_WMASK;
+ 
+-    if (mch->ext_tseg_mbytes > 0) {
+-        pci_set_word(d->config + MCH_HOST_BRIDGE_EXT_TSEG_MBYTES,
+-                     MCH_HOST_BRIDGE_EXT_TSEG_MBYTES_QUERY);
+-    }
++        if (mch->ext_tseg_mbytes > 0) {
++            pci_set_word(d->config + MCH_HOST_BRIDGE_EXT_TSEG_MBYTES,
++                        MCH_HOST_BRIDGE_EXT_TSEG_MBYTES_QUERY);
++        }
+ 
+-    d->config[MCH_HOST_BRIDGE_F_SMBASE] = 0;
+-    d->wmask[MCH_HOST_BRIDGE_F_SMBASE] = 0xff;
++        d->config[MCH_HOST_BRIDGE_F_SMBASE] = 0;
++        d->wmask[MCH_HOST_BRIDGE_F_SMBASE] = 0xff;
++    }
+ 
+     mch_update(mch);
+ }
+@@ -586,6 +598,10 @@ static void mch_realize(PCIDevice *d, Error **errp)
+                  PAM_EXPAN_BASE + i * PAM_EXPAN_SIZE, PAM_EXPAN_SIZE);
+     }
+ 
++    if (!mch->has_smm_ranges) {
++        return;
++    }
++
+     /* if *disabled* show SMRAM to all CPUs */
+     memory_region_init_alias(&mch->smram_region, OBJECT(mch), "smram-region",
+                              mch->pci_address_space, MCH_HOST_BRIDGE_SMRAM_C_BASE,
+diff --git a/include/hw/i386/pc.h b/include/hw/i386/pc.h
+index 1cc0bd2d7c..4d1b9296bc 100644
+--- a/include/hw/i386/pc.h
++++ b/include/hw/i386/pc.h
+@@ -150,6 +150,7 @@ void pc_guest_info_init(PCMachineState *pcms);
+ #define PCI_HOST_PROP_PCI_HOLE64_SIZE  "pci-hole64-size"
+ #define PCI_HOST_BELOW_4G_MEM_SIZE     "below-4g-mem-size"
+ #define PCI_HOST_ABOVE_4G_MEM_SIZE     "above-4g-mem-size"
++#define PCI_HOST_PROP_SMM_RANGES       "smm-ranges"
+ 
+ 
+ void pc_pci_as_mapping_init(MemoryRegion *system_memory,
+diff --git a/include/hw/pci-host/q35.h b/include/hw/pci-host/q35.h
+index e89329c51e..e6f7d322fa 100644
+--- a/include/hw/pci-host/q35.h
++++ b/include/hw/pci-host/q35.h
+@@ -50,6 +50,7 @@ struct MCHPCIState {
+     MemoryRegion tseg_blackhole, tseg_window;
+     MemoryRegion smbase_blackhole, smbase_window;
+     bool has_smram_at_smbase;
++    bool has_smm_ranges;
+     Range pci_hole;
+     uint64_t below_4g_mem_size;
+     uint64_t above_4g_mem_size;
+-- 
+2.39.2
+

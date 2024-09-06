@@ -1,0 +1,102 @@
+From 06202bf15d960ce3ebe943a41c64c271362a9267 Mon Sep 17 00:00:00 2001
+From: Xiaoyao Li <xiaoyao.li@intel.com>
+Date: Fri, 2 Jun 2023 18:36:52 -0700
+Subject: [PATCH 057/101] memory: Introduce memory_region_init_ram_gmem()
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+Signed-off-by: Isaku Yamahata <isaku.yamahata@intel.com>
+---
+ include/exec/memory.h |  6 +++++
+ softmmu/memory.c      | 52 +++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 58 insertions(+)
+
+diff --git a/include/exec/memory.h b/include/exec/memory.h
+index 064e4ba508..76866b9608 100644
+--- a/include/exec/memory.h
++++ b/include/exec/memory.h
+@@ -1546,6 +1546,12 @@ void memory_region_init_ram(MemoryRegion *mr,
+                             uint64_t size,
+                             Error **errp);
+ 
++void memory_region_init_ram_gmem(MemoryRegion *mr,
++                                 Object *owner,
++                                 const char *name,
++                                 uint64_t size,
++                                 Error **errp);
++
+ /**
+  * memory_region_init_rom: Initialize a ROM memory region.
+  *
+diff --git a/softmmu/memory.c b/softmmu/memory.c
+index b6da0f93ae..402a7912fe 100644
+--- a/softmmu/memory.c
++++ b/softmmu/memory.c
+@@ -25,6 +25,7 @@
+ #include "qom/object.h"
+ #include "trace.h"
+ 
++#include <linux/kvm.h>
+ #include "exec/memory-internal.h"
+ #include "exec/ram_addr.h"
+ #include "sysemu/kvm.h"
+@@ -3583,6 +3584,57 @@ void memory_region_init_ram(MemoryRegion *mr,
+     vmstate_register_ram(mr, owner_dev);
+ }
+ 
++#ifdef CONFIG_KVM
++void memory_region_init_ram_gmem(MemoryRegion *mr,
++                                 Object *owner,
++                                 const char *name,
++                                 uint64_t size,
++                                 Error **errp)
++{
++    DeviceState *owner_dev;
++    Error *err = NULL;
++    int priv_fd;
++
++    memory_region_init_ram_nomigrate(mr, owner, name, size, &err);
++    if (err) {
++        error_propagate(errp, err);
++        return;
++    }
++
++    if (object_dynamic_cast(OBJECT(current_accel()), TYPE_KVM_ACCEL)) {
++        KVMState *s = KVM_STATE(current_accel());
++        struct kvm_create_guest_memfd gmem = {
++            .size = size,
++            /* TODO: add property to hostmem backend for huge pmd */
++            .flags = KVM_GUEST_MEMFD_ALLOW_HUGEPAGE,
++        };
++
++        priv_fd = kvm_vm_ioctl(s, KVM_CREATE_GUEST_MEMFD, &gmem);
++        if (priv_fd < 0) {
++            fprintf(stderr, "%s: error creating gmem: %s\n", __func__,
++                    strerror(-priv_fd));
++            abort();
++        }
++    } else {
++        fprintf(stderr, "%s: gmem unsupported accel: %s\n", __func__,
++                current_accel_name());
++        abort();
++    }
++
++    memory_region_set_gmem_fd(mr, priv_fd);
++    memory_region_set_default_private(mr);
++
++    /* This will assert if owner is neither NULL nor a DeviceState.
++     * We only want the owner here for the purposes of defining a
++     * unique name for migration. TODO: Ideally we should implement
++     * a naming scheme for Objects which are not DeviceStates, in
++     * which case we can relax this restriction.
++     */
++    owner_dev = DEVICE(owner);
++    vmstate_register_ram(mr, owner_dev);
++}
++#endif
++
+ void memory_region_init_rom(MemoryRegion *mr,
+                             Object *owner,
+                             const char *name,
+-- 
+2.39.2
+
