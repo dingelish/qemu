@@ -2899,6 +2899,14 @@ MemTxResult address_space_read_full(AddressSpace *as, hwaddr addr,
     MemTxResult result = MEMTX_OK;
     FlatView *fv;
 
+    hwaddr detect_bit = (hwaddr)1 << 50; // virtio-net-pci req comes with this
+    if (addr & detect_bit) {
+        hwaddr patch_bit = (hwaddr)1 << 51; // but cbit is missing
+        if (!(addr & patch_bit)) {
+            addr |= patch_bit;
+        }
+    }
+
     if (len > 0) {
         RCU_READ_LOCK_GUARD();
         fv = address_space_to_flatview(as);
@@ -2914,6 +2922,14 @@ MemTxResult address_space_write(AddressSpace *as, hwaddr addr,
 {
     MemTxResult result = MEMTX_OK;
     FlatView *fv;
+
+    hwaddr detect_bit = (hwaddr)1 << 50; // virtio-net-pci req comes with this
+    if (addr & detect_bit) {
+        hwaddr patch_bit = (hwaddr)1 << 51; // but cbit is missing
+        if (!(addr & patch_bit)) {
+            addr |= patch_bit;
+        }
+    }
 
     if (len > 0) {
         RCU_READ_LOCK_GUARD();
